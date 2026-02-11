@@ -3,9 +3,9 @@
 
 #include "quantumRegister.h"
 
-const double pi = acos(-1.0);
+inline constexpr double pi = 3.14159265358979323846;
 
-void quatumFourierTransform(QuantumRegister *qureg);
+void quantumFourierTransform(QuantumRegister *qureg);
 unsigned int Grover(unsigned int omega, unsigned int numBits, bool verbose);
 
 

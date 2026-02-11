@@ -32,7 +32,7 @@ QuantumGate QuantumGate::operator*(Amplitude x) {
 		for (j = 0; j < dimension; j++) {
 			//result[i][j].real = matrix[i][j].real * x.real - matrix[i][j].imag * x.imag;
 			//result[i][j].imag = matrix[i][j].real * x.imag + matrix[i][j].imag * x.real;
-			result[i][j] = amplitudeMult(result[i][j], x);
+			result[i][j] = amplitudeMult(matrix[i][j], x);
 		}
 	}
 	return result;

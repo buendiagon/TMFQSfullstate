@@ -2,8 +2,9 @@
 #include <algorithm>
 #include <iostream>
 #include "quantumAlgorithms.h"
+#include "utils.h"
 
-void quatumFourierTransform(QuantumRegister *qureg) {
+void quantumFourierTransform(QuantumRegister *qureg) {
    for(unsigned int j = 0; j < qureg->numQubits; j++){
       qureg->Hadamard(j);
 		for (unsigned int k = 1; k < qureg->numQubits - j; k++) {
@@ -68,7 +69,7 @@ unsigned int Grover(unsigned int omega, unsigned int numBits, bool verbose) {
 	}
 
 	// iterate O(sqrt(N)) times. where we stop is important!
-	for (unsigned int k = 0; k < (unsigned int)round(pi / (4.0*asin(1/sqrt(N)))-1.0/2.0); k++) {
+	for (unsigned int k = 0; k < (unsigned int)round(M_PI / (4.0*asin(1.0/sqrt((double)N)))-0.5); k++) {
 		// Uomega operator is applied to the whole system
 		qureg.applyGate(Uomega, v);
 
@@ -92,10 +93,17 @@ unsigned int Grover(unsigned int omega, unsigned int numBits, bool verbose) {
 	// Collapse the system. There is a high probability that we get
 	// the basis element corresponding to omega.
 
-	// IMPLEMENTAR MEASURE ############################################
-	//string s = r.measure(); // result
-
-	// ARREGLAR  ######################################################
-	// return binary_to_base10(s);
-	return 0;
+	// Measurement: sample a state from the probability distribution |amplitude|^2
+	double rnd = getRandomNumber();
+	double cumulativeProb = 0.0;
+	for (unsigned int s = 0; s < N; s++) {
+		Amplitude amp = qureg.amplitude(s);
+		double prob = amp.real * amp.real + amp.imag * amp.imag;
+		cumulativeProb += prob;
+		if (rnd <= cumulativeProb) {
+			return s;
+		}
+	}
+	// Fallback: return last state (should not normally reach here)
+	return N - 1;
 }

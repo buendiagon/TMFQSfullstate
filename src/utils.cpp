@@ -1,4 +1,5 @@
 #include <random>
+#include <cmath>
 #include "utils.h"
 
 // the seed for the random number engine is obtained using this
@@ -17,19 +18,19 @@ double getRandomNumber() {
 std::vector<double> normalizeArray(std::vector<double> inArray) {
 	double norm = 0.0;
 
-	#pragma opm parallel for
+	#pragma omp parallel for
 	for(unsigned int i=0; i<inArray.size(); i++) {
 		inArray[i] = getRandomNumber();
 	}
 
-	#pragma omp parallel for reduction(+:sum)
+	#pragma omp parallel for reduction(+:norm)
 	for(unsigned int i=0; i<inArray.size(); i++) {
 		norm += std::pow(inArray[i], 2);
 	}
 
 	norm = std::sqrt(norm);
 
-	#pragma opm parallel for
+	#pragma omp parallel for
 	for(unsigned int i=0; i<inArray.size(); i++) {
 		inArray[i] = inArray[i]/norm;
 	}
@@ -96,8 +97,8 @@ Amplitude eRaisedToComplex(Amplitude amp){
 	// e^(ic) = (cos c) + i(sin c)
 	// e^(b+ic) = (e^b)((cos c) + i(sin c))
 	Amplitude result;
-	result.real = pow(e, amp.real) * cos(amp.imag);
-	result.imag = pow(e, amp.real) * sin(amp.imag);
+	result.real = exp(amp.real) * cos(amp.imag);
+	result.imag = exp(amp.real) * sin(amp.imag);
 	return result;
 }
 
@@ -199,7 +200,6 @@ void printHelp() {
 
 unsigned int printErrors(unsigned short nError) {
 	unsigned short tCol = 80;
-	unsigned short nCol = 30;
 
 	printf("\n");
 	repeatChar('=', tCol);

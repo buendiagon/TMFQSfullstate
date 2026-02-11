@@ -13,13 +13,13 @@ int main(int argc, char *argv[]){
 		return 1;
 	}
    else{
-		int i, j;
+
 		unsigned int numberOfQubits, omega;
 		numberOfQubits = atoi(argv[1]);
 		omega = atoi(argv[2]);
 
 		QuantumRegister qureg(numberOfQubits);
-		quatumFourierTransform(&qureg);
+		quantumFourierTransform(&qureg);
 		Grover(omega, numberOfQubits, true);
 		//qureg.printStatesVector();
 	}
