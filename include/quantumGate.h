@@ -19,6 +19,11 @@ class QuantumGate {
 		unsigned int dimension;
 		QuantumGate();
 		QuantumGate(unsigned int dimension);
+		QuantumGate(const QuantumGate& other);  // Copy constructor
+		QuantumGate(QuantumGate&& other) noexcept;  // Move constructor
+		QuantumGate& operator=(const QuantumGate& other);  // Assignment operator
+		QuantumGate& operator=(QuantumGate&& other) noexcept;  // Move assignment operator
+		~QuantumGate();  // Destructor
 		Amplitude * operator[](unsigned int i);
 		QuantumGate operator*(Amplitude x);
 		QuantumGate operator*(QuantumGate &qg);

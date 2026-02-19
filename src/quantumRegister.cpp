@@ -9,6 +9,8 @@
 //Constructors ###################################
 // Default contructor
 QuantumRegister::QuantumRegister() {
+	this->numQubits = 0;
+	this->numStates = 0;
 }
 
 // Parametrized Constructor 1
@@ -105,7 +107,10 @@ QuantumRegister::QuantumRegister(unsigned int numQubits, string filePath) {
 
 //Copy Constructor 
 QuantumRegister::QuantumRegister(const QuantumRegister& qreg) {
+	this->numQubits = qreg.numQubits;
+	this->numStates = qreg.numStates;
 	this->amplitudes = qreg.amplitudes;
+	this->states = qreg.states;
 }
 
 int QuantumRegister::getSize(){
@@ -117,7 +122,7 @@ int QuantumRegister::getSize(){
 //Get the element i-th of linearized amplitudes vector
 Amplitude QuantumRegister::amplitude(unsigned int state){
 	Amplitude amp;
-	if (state <= this->numStates){
+	if (state < this->numStates){
 		amp.real = this->amplitudes[state*2];
 		amp.imag = this->amplitudes[state*2 + 1];
 	}
@@ -131,10 +136,10 @@ Amplitude QuantumRegister::amplitude(unsigned int state){
 
 
 
-//Get the Magnitud or Modulus of the element i-th
+//Get the probability (|amplitude|^2) of the state
 double QuantumRegister::probability(unsigned int state){
 	Amplitude amp = amplitude(state);
-	return sqrt(pow(amp.real, 2) + pow(amp.imag, 2));
+	return pow(amp.real, 2) + pow(amp.imag, 2);
 }
 
 //Get the sum of magnitudes of the amplitudes
@@ -151,8 +156,9 @@ double QuantumRegister::probabilitySumatory(){
 //Set methods ####################################
 void QuantumRegister::setSize(unsigned int numQubits){
 	this->numQubits = numQubits;
-	this->states.resize(pow(2,numQubits), 0);
-	this->amplitudes.resize(pow(2,numQubits)*2, 0.0);
+	this->numStates = pow(2, numQubits);
+	this->states.resize(this->numStates, 0);
+	this->amplitudes.resize(this->numStates*2, 0.0);
 }
 
 
@@ -233,9 +239,9 @@ int QuantumRegister::findState(unsigned int state){
 
 double QuantumRegister::getProbability(unsigned int state){
 	Amplitude amp;
-	amp.real = this->amplitudes[state];
-	amp.imag = this->amplitudes[state+1];
-	return absoluteValue(amp);
+	amp.real = this->amplitudes[state*2];
+	amp.imag = this->amplitudes[state*2+1];
+	return pow(amp.real, 2) + pow(amp.imag, 2);
 }
 
 
@@ -290,7 +296,7 @@ void QuantumRegister::applyGate(QuantumGate gate, IntegerVector qubits){
 					// For all bits of k
 					// l Iterates backward over the bits of k (the most significative bits is on the right)
 					// And i iterates forward over qubits vector
-					for(l = qubits.size() - 1, i = 0; l >= 0, i < qubits.size(); l--, i++){ 
+					for(l = qubits.size() - 1, i = 0; l >= 0 && i < (int)qubits.size(); l--, i++){
 						// get the i-th bit
 						tempBit = (k >> l)&1; 
 						pos = this->numQubits - qubits[i] - 1;

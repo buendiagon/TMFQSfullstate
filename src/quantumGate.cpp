@@ -3,6 +3,7 @@
 // Constructors
 QuantumGate::QuantumGate(){
 	this->dimension = 0;
+	this->matrix = nullptr;
 }
 QuantumGate::QuantumGate(unsigned int dimension){
 	this->dimension = dimension;
@@ -16,6 +17,86 @@ QuantumGate::QuantumGate(unsigned int dimension){
 			matrix[i][j].imag = 0.0;
 		}
 	}
+}
+
+// Destructor
+QuantumGate::~QuantumGate(){
+	if (matrix != nullptr) {
+		for (unsigned int i = 0; i < dimension; i++) {
+			delete[] matrix[i];
+		}
+		delete[] matrix;
+	}
+}
+
+// Copy Constructor
+QuantumGate::QuantumGate(const QuantumGate& other){
+	this->dimension = other.dimension;
+	if (other.matrix != nullptr && dimension > 0) {
+		matrix = new Amplitude *[dimension];
+		for (unsigned int i = 0; i < dimension; i++) {
+			matrix[i] = new Amplitude[dimension];
+			for (unsigned int j = 0; j < dimension; j++) {
+				matrix[i][j] = other.matrix[i][j];
+			}
+		}
+	} else {
+		matrix = nullptr;
+	}
+}
+
+// Move Constructor
+QuantumGate::QuantumGate(QuantumGate&& other) noexcept {
+	this->dimension = other.dimension;
+	this->matrix = other.matrix;
+	other.dimension = 0;
+	other.matrix = nullptr;
+}
+
+// Assignment Operator
+QuantumGate& QuantumGate::operator=(const QuantumGate& other){
+	if (this != &other) {
+		// Free existing resources
+		if (matrix != nullptr) {
+			for (unsigned int i = 0; i < dimension; i++) {
+				delete[] matrix[i];
+			}
+			delete[] matrix;
+		}
+		// Copy from other
+		this->dimension = other.dimension;
+		if (other.matrix != nullptr && dimension > 0) {
+			matrix = new Amplitude *[dimension];
+			for (unsigned int i = 0; i < dimension; i++) {
+				matrix[i] = new Amplitude[dimension];
+				for (unsigned int j = 0; j < dimension; j++) {
+					matrix[i][j] = other.matrix[i][j];
+				}
+			}
+		} else {
+			matrix = nullptr;
+		}
+	}
+	return *this;
+}
+
+// Move Assignment Operator
+QuantumGate& QuantumGate::operator=(QuantumGate&& other) noexcept {
+	if (this != &other) {
+		// Free existing resources
+		if (matrix != nullptr) {
+			for (unsigned int i = 0; i < dimension; i++) {
+				delete[] matrix[i];
+			}
+			delete[] matrix;
+		}
+		// Move from other
+		this->dimension = other.dimension;
+		this->matrix = other.matrix;
+		other.dimension = 0;
+		other.matrix = nullptr;
+	}
+	return *this;
 }
 
 // Operator []
