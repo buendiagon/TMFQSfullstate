@@ -18,9 +18,8 @@ int main(int argc, char *argv[]){
 		numberOfQubits = atoi(argv[1]);
 		omega = atoi(argv[2]);
 
-		QuantumRegister qureg(numberOfQubits);
-		quantumFourierTransform(&qureg);
-		Grover(omega, numberOfQubits, true);
-		//qureg.printStatesVector();
+		unsigned int result = Grover(omega, numberOfQubits, true);
+		cout << "Grover search result: " << result << endl;
+		return 0;
 	}
 }
