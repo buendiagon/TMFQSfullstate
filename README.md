@@ -1,92 +1,331 @@
-# TMFQS
-Quantum Simulator
+# TMFQSFS - Quantum Simulator
 
+<p align="center">
+  <strong>A lightweight quantum computing simulator written in C++17</strong>
+</p>
 
-######################################## PROCESO ##################################################
-# Se crea una rama feature en el remoto
-# Se crea una rama feature en el local
-# Se hace merge local a develop
-# Se hace push de develop local a develop remoto
-# Se hace el merge de develop a main en el remoto
+---
 
+## 📋 Table of Contents
 
+- [Overview](#overview)
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Usage](#usage)
+- [API Reference](#api-reference)
+- [Examples](#examples)
+- [Project Structure](#project-structure)
+- [License](#license)
 
+---
 
-#################################### CONFIGURACIÓN INICIAL ##########################################
-#CREAR UN REPOSITORIO LOCAL
-cd /path/
-git init
-git add *.cpp
-git add *.h
-touch LICENSE
-git add LICENSE
-git commit -m 'Initial project version'
+## Overview
 
+**TMFQSFS** (Too Many Fancy Quantum Simulator For Science) is a quantum computing simulator that provides a framework for simulating quantum registers, quantum gates, and quantum algorithms. It uses state vector simulation to represent quantum states and supports common quantum operations.
 
-#CONFIGURAR EL REPOSITORIO LOCAL
-git config --global user.name "Gilberto Javier Díaz Toro"
-git config --global user.email gilberto.diaz@gmail.com
-git config --global core.editor vim
-git config --global init.defaultBranch main
-git config pull.rebase true #Cuando es verdadero, rebase las ramas en la parte superior de la rama recuperada, 
-								    #en lugar de fusionar la rama predeterminada del control remoto predeterminado 
-								    #cuando se ejecuta "git pull" 
+The simulator is designed for:
+- Educational purposes and learning quantum computing concepts
+- Prototyping and testing quantum algorithms
+- Research in quantum computing fundamentals
 
+---
 
+## Features
 
-#CONFIGURAR EL REPOSITORIO REMOTO
-git remote add tmfqs https://github.com/diaztoro/TMFQS.git
+### Quantum Register
+- Create registers with arbitrary number of qubits
+- Initialize registers to specific basis states
+- Query amplitudes and probabilities
+- Print state vectors
 
+### Quantum Gates
+| Single-Qubit Gates | Multi-Qubit Gates |
+|-------------------|-------------------|
+| Hadamard (H) | Controlled-NOT (CNOT) |
+| Pauli-X, Y, Z | Controlled Phase Shift |
+| Phase Shift | Toffoli (CCNOT) |
+| T Gate (π/8) | SWAP |
+| Identity | Ising |
 
-#GENERAR EL TOKEN EN GITHUB
-Click en el menú de la foto -> Settings -> Developer settings -> Personal access token -> token (classic)
+### Quantum Algorithms
+- **Quantum Fourier Transform (QFT)** - Transforms computational basis to Fourier basis
+- **Grover's Search Algorithm** - Searches for marked states with quadratic speedup
 
+---
 
-#LISTAR REPOSITORIOS REMOTOS
-git remote -v
+## Requirements
 
+- **Compiler**: Intel® oneAPI DPC++/C++ Compiler (`icpx`) with C++17 support
+- **OS**: Linux (tested on Fedora)
+- **Build**: GNU Make
 
-#CLONAR LA RAMA DEVELOP DEL REMOTO
-git clone -b develop https://github.com/diaztoro/TMFQS.git
+### Setting up Intel oneAPI
 
+Before compiling, initialize the Intel oneAPI environment:
 
-################################ FIN DE CONFIGURACIÓN INICIAL #######################################
+```bash
+source /opt/intel/oneapi/setvars.sh
+```
 
+Or add to your shell profile for persistent configuration.
 
+---
 
+## Installation
 
+### Clone the Repository
 
-########################################## FLUJO DE TRABAJO #########################################
+```bash
+git clone https://github.com/diaztoro/TMFQS.git
+cd TMFQS
+```
 
-#CREAR LA RAMA FEATURE EN EL REPOSITORIO REMOTO
-diaztoro/TMFQS -> Hacer click en el selector de ramas y seleccionar "develop" -> escribir el nombre de la nueva rama -> 
-hacer click en la opción "create:feature from develop" 
+### Build
 
+```bash
+# Clean previous builds (optional)
+make clean
 
-#CREAR LA RAMA FEATURE LOCAL DESDE EL REPOSITORIO REMOTO
-git checkout -b feature tmfqs/feature
+# Build the library and examples
+make
+```
 
-#DESARROLLAR, PROGRAMAR, RÁPIDO
+This will:
+1. Compile the shared library `libtmfqsfs.so` in `lib64/`
+2. Compile all example programs in `bin/`
 
-#HACER UN STAGING AUTOMÁTICO Y ACTUALIZAR LA RAMA CON LOS ARCHIVOS MODIFICADOS
-git commit -a --no-edit -m "Update types.h with new data structures 2022-12-28"		
+### Verify Installation
 
+```bash
+export LD_LIBRARY_PATH="$PWD/lib64:$LD_LIBRARY_PATH"
+./bin/grover 3 5
+```
 
-#SUBIR CAMBIOS DEL REPOSITORIO LOCAL AL REPOSITORIO REMOTO
-git push -u tmfqs feature
+Expected output: Grover's algorithm finding state |5⟩ with high probability.
 
+---
 
-#HACER EL PULL REQUEST DESDE LA RAMA FEATURE DEL REPOSITORIO REMOTO A LA RAMA DEVELOP DEL REPOSITORIO REMOTO
-diaztoro/TMFQS -> Hacer click en "Pull request" -> Hacer click en "Compare and Pull request" -> 
-Seleccionar destino "develop" y origen "feature" -> Hacer click en "Create pull request" -> En la opción "Assignees" 
-hacer click en "Assig yourself" -> Hacer click en "Merge Pull request" -> Finalmente hacer click en "Confirm merge"
+## Usage
 
+### Environment Setup
 
-#REPETIR EL PASO ANTERIOR PARA ACTUALIZAR LA RAMA MAIN DEL REPOSITORIO REMOTO
+Before running any program, set the library path:
 
+```bash
+export LD_LIBRARY_PATH="/path/to/QSTest/lib64:$LD_LIBRARY_PATH"
+```
 
-#SINCRONIZAR LA RAMA DEVELOP LOCAL DESDE EL REPOSITORIO REMOTO
-git switch develop
-git pull tmfqs develop
+### Running Programs
 
+#### Quantum Fourier Transform
+```bash
+./bin/qft <num_qubits> <initial_state>
 
+# Example: QFT on 3 qubits starting from |0⟩
+./bin/qft 3 0
+```
+
+#### Grover's Search Algorithm
+```bash
+./bin/grover <num_qubits> <marked_state>
+
+# Example: Search for |5⟩ in a 3-qubit system
+./bin/grover 3 5
+
+# Example: Search for |11⟩ in a 4-qubit system
+./bin/grover 4 11
+```
+
+#### Applying Individual Gates
+```bash
+./bin/applyHadamard <num_qubits> <target_qubit>
+./bin/applyControlledNot <num_qubits> <control_qubit> <target_qubit>
+./bin/applyControlledPhaseShift <num_qubits> <control> <target> <theta>
+```
+
+---
+
+## API Reference
+
+### QuantumRegister Class
+
+```cpp
+#include "tmfqsfs.h"
+
+// Create a register with n qubits (initialized to |0⟩)
+QuantumRegister qreg(n);
+
+// Create a register initialized to a specific state
+QuantumRegister qreg(n, initial_state);
+
+// Apply quantum gates
+qreg.Hadamard(qubit);
+qreg.ControlledNot(control, target);
+qreg.ControlledPhaseShift(control, target, theta);
+qreg.Swap(qubit1, qubit2);
+
+// Query state
+Amplitude amp = qreg.amplitude(state);
+double prob = qreg.probability(state);
+double total = qreg.probabilitySumatory();  // Should equal 1.0
+
+// Display
+qreg.printStatesVector();
+```
+
+### QuantumGate Class
+
+```cpp
+// Create standard gates
+QuantumGate H = QuantumGate::Hadamard();
+QuantumGate X = QuantumGate::PauliX();
+QuantumGate CNOT = QuantumGate::ControlledNot();
+QuantumGate I = QuantumGate::Identity(dimension);
+
+// Gate operations
+QuantumGate result = gate1 * gate2;  // Matrix multiplication
+QuantumGate scaled = gate * scalar;  // Scalar multiplication
+
+// Apply arbitrary gate to register
+IntegerVector qubits = {0, 1};  // Target qubits
+qreg.applyGate(gate, qubits);
+```
+
+### Quantum Algorithms
+
+```cpp
+#include "tmfqsfs.h"
+
+// Quantum Fourier Transform
+QuantumRegister qreg(n, initial_state);
+quantumFourierTransform(&qreg);
+
+// Grover's Search (returns measured state)
+unsigned int result = Grover(marked_state, num_qubits, verbose);
+```
+
+---
+
+## Examples
+
+### Example 1: Creating a Bell State
+
+```cpp
+#include "tmfqsfs.h"
+#include <iostream>
+
+int main() {
+    // Create |00⟩
+    QuantumRegister qreg(2, 0);
+    
+    // Apply H to qubit 0: (|0⟩ + |1⟩)/√2 ⊗ |0⟩
+    qreg.Hadamard(0);
+    
+    // Apply CNOT: (|00⟩ + |11⟩)/√2
+    qreg.ControlledNot(0, 1);
+    
+    std::cout << "Bell State |Φ+⟩:" << std::endl;
+    qreg.printStatesVector();
+    
+    return 0;
+}
+```
+
+### Example 2: Grover's Algorithm
+
+```cpp
+#include "tmfqsfs.h"
+#include <iostream>
+
+int main() {
+    unsigned int target = 5;   // State to find
+    unsigned int qubits = 3;   // 2^3 = 8 possible states
+    
+    unsigned int result = Grover(target, qubits, true);
+    
+    std::cout << "Found: " << result << std::endl;
+    std::cout << "Expected: " << target << std::endl;
+    
+    return 0;
+}
+```
+
+### Compiling Your Own Programs
+
+```bash
+# Compile
+icpx -I /path/to/QSTest/include -L /path/to/QSTest/lib64 -ltmfqsfs myprogram.cpp -o myprogram
+
+# Run
+export LD_LIBRARY_PATH="/path/to/QSTest/lib64:$LD_LIBRARY_PATH"
+./myprogram
+```
+
+---
+
+## Project Structure
+
+```
+QSTest/
+├── include/                  # Header files
+│   ├── tmfqsfs.h            # Main include (includes all headers)
+│   ├── quantumRegister.h    # Quantum register class
+│   ├── quantumGate.h        # Quantum gate class
+│   ├── quantumAlgorithms.h  # QFT, Grover, etc.
+│   ├── types.h              # Type definitions (Amplitude, vectors)
+│   └── utils.h              # Utility functions
+├── src/                      # Source files
+│   ├── quantumRegister.cpp
+│   ├── quantumGate.cpp
+│   ├── quantumAlgorithms.cpp
+│   ├── utils.cpp
+│   └── Makefile
+├── examples/                 # Example programs
+│   ├── qft.cpp
+│   ├── grover.cpp
+│   ├── applyHadamard.cpp
+│   └── ...
+├── bin/                      # Compiled binaries
+├── lib64/                    # Shared library
+│   └── libtmfqsfs.so
+├── Makefile                  # Main build file
+├── LICENSE
+└── README.md
+```
+
+---
+
+## Technical Notes
+
+### State Vector Representation
+
+Quantum states are stored as a vector of complex amplitudes:
+- For `n` qubits, the state vector has `2^n` complex entries
+- Each amplitude is stored as `{real, imag}` pairs
+- Memory usage: `2^(n+1) * sizeof(double)` bytes
+
+### Limitations
+
+- **Scalability**: Memory grows exponentially with qubit count
+- **Maximum qubits**: Practical limit ~25-30 qubits depending on available RAM
+- **No noise simulation**: Ideal quantum operations only
+
+---
+
+## License
+
+This project is licensed under the terms specified in the [LICENSE](LICENSE) file.
+
+---
+
+## Authors
+
+- **Gilberto Javier Díaz Toro** - *Initial development*
+
+---
+
+## Acknowledgments
+
+- Intel for the oneAPI toolkit
+- The quantum computing research community
