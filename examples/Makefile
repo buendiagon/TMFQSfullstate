@@ -6,7 +6,7 @@ INCS = -I ../include -I ./ -I /usr/local/zfp/include
 
 LIBS += -L ../lib64 -l tmfqsfs #-L /usr/local/zfp/lib64 -lzfp -lstdc++
 
-all: applyHadamard applyControlledPhaseShift applyControlledNot testQregQgate qft grover getSumOfProbabilities 
+all: applyHadamard applyControlledPhaseShift applyControlledNot testQregQgate qft qftG grover getSumOfProbabilities 
 
 
 #LINK MAIN PROGRAMS
@@ -24,6 +24,9 @@ testQregQgate: testQregQgate.o
 
 qft: qft.o
 	$(CXX) $(LIBS) $(CFLAGS) $(DEBUG_FLAGS) qft.o -o ../bin/qft
+
+qftG: qftG.o
+	$(CXX) $(LIBS) $(CFLAGS) $(DEBUG_FLAGS) qftG.o -o ../bin/qftG
 
 grover: grover.o
 	$(CXX) $(LIBS) $(CFLAGS) $(DEBUG_FLAGS) grover.o -o ../bin/grover
@@ -49,6 +52,9 @@ testQregQgate.o: testQregQgate.cpp
 qft.o: qft.cpp
 	$(CXX) $(INCS) $(CXXFLAGS) $(DEBUG_FLAG) qft.cpp
 
+qftG.o: qftG.cpp
+	$(CXX) $(INCS) $(CXXFLAGS) $(DEBUG_FLAG) qftG.cpp
+
 grover.o: grover.cpp
 	$(CXX) $(INCS) $(CXXFLAGS) $(DEBUG_FLAG) grover.cpp
 
@@ -59,4 +65,3 @@ getSumOfProbabilities.o: getSumOfProbabilities.cpp
 #CLEAN BINARIES
 clean: 
 	rm -f *.o 
-

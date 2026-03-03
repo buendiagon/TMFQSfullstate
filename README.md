@@ -13,6 +13,7 @@
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Usage](#usage)
+- [Performance Profiling (psrecord)](#performance-profiling-psrecord)
 - [API Reference](#api-reference)
 - [Examples](#examples)
 - [Project Structure](#project-structure)
@@ -143,6 +144,36 @@ export LD_LIBRARY_PATH="/path/to/QSTest/lib64:$LD_LIBRARY_PATH"
 ./bin/applyControlledNot <num_qubits> <control_qubit> <target_qubit>
 ./bin/applyControlledPhaseShift <num_qubits> <control> <target> <theta>
 ```
+
+---
+
+## Performance Profiling (psrecord)
+
+`qftG` now keeps algorithm logic only. For execution time and RAM graphs, use external profiling with `psrecord`.
+
+### Install on Rocky Linux
+
+```bash
+sudo dnf install -y python3 python3-pip
+python3 -m venv .venv-prof
+source .venv-prof/bin/activate
+python -m pip install --upgrade pip
+python -m pip install "psrecord[plot]"
+```
+
+### Generate PNG timeline (CPU + RAM vs time)
+
+```bash
+mkdir -p profiling
+psrecord "./bin/qftG 20" \
+  --interval 0.02 \
+  --plot profiling/qftG_20_timeline.png \
+  --log profiling/qftG_20_timeline.log
+```
+
+Output files:
+- `profiling/qftG_20_timeline.png`: timeline graph
+- `profiling/qftG_20_timeline.log`: sampled raw data
 
 ---
 
