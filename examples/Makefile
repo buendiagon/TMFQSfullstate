@@ -1,12 +1,17 @@
-CXX = icpx
+CXX = g++
 CFLAGS  = 
 DEBUG_FLAGS = #-g
 CXXFLAGS = -c
-INCS = -I ../include -I ./ -I /usr/local/zfp/include 
+INCS = -I ../include -I ./ 
 
-LIBS += -L ../lib64 -l tmfqsfs #-L /usr/local/zfp/lib64 -lzfp -lstdc++
+LIBS += -L ../lib64 -l tmfqsfs 
 
-all: applyHadamard applyControlledPhaseShift applyControlledNot testQregQgate qft qftG grover getSumOfProbabilities 
+ifeq ($(USE_BLOSC), 1)
+CFLAGS += -DUSE_BLOSC
+LIBS += -lblosc2
+endif
+
+all: applyHadamard applyControlledPhaseShift applyControlledNot testQregQgate qft qftG grover getSumOfProbabilities
 
 
 #LINK MAIN PROGRAMS
@@ -38,28 +43,28 @@ getSumOfProbabilities: getSumOfProbabilities.o
 
 #COMPILE SOURCE MAIN PROGRAMS
 applyHadamard.o: applyHadamard.cpp
-	$(CXX) $(INCS) $(CXXFLAGS) $(DEBUG_FLAG) applyHadamard.cpp
+	$(CXX) $(INCS) $(CFLAGS) $(CXXFLAGS) $(DEBUG_FLAG) applyHadamard.cpp
 
 applyControlledPhaseShift.o: applyControlledPhaseShift.cpp
-	$(CXX) $(INCS) $(CXXFLAGS) $(DEBUG_FLAG) applyControlledPhaseShift.cpp
+	$(CXX) $(INCS) $(CFLAGS) $(CXXFLAGS) $(DEBUG_FLAG) applyControlledPhaseShift.cpp
 
 applyControlledNot.o: applyControlledNot.cpp
-	$(CXX) $(INCS) $(CXXFLAGS) $(DEBUG_FLAG) applyControlledNot.cpp
+	$(CXX) $(INCS) $(CFLAGS) $(CXXFLAGS) $(DEBUG_FLAG) applyControlledNot.cpp
 
 testQregQgate.o: testQregQgate.cpp
-	$(CXX) $(INCS) $(CXXFLAGS) $(DEBUG_FLAG) testQregQgate.cpp
+	$(CXX) $(INCS) $(CFLAGS) $(CXXFLAGS) $(DEBUG_FLAG) testQregQgate.cpp
 
 qft.o: qft.cpp
-	$(CXX) $(INCS) $(CXXFLAGS) $(DEBUG_FLAG) qft.cpp
+	$(CXX) $(INCS) $(CFLAGS) $(CXXFLAGS) $(DEBUG_FLAG) qft.cpp
 
 qftG.o: qftG.cpp
-	$(CXX) $(INCS) $(CXXFLAGS) $(DEBUG_FLAG) qftG.cpp
+	$(CXX) $(INCS) $(CFLAGS) $(CXXFLAGS) $(DEBUG_FLAG) qftG.cpp
 
 grover.o: grover.cpp
-	$(CXX) $(INCS) $(CXXFLAGS) $(DEBUG_FLAG) grover.cpp
+	$(CXX) $(INCS) $(CFLAGS) $(CXXFLAGS) $(DEBUG_FLAG) grover.cpp
 
 getSumOfProbabilities.o: getSumOfProbabilities.cpp
-	$(CXX) $(INCS) $(CXXFLAGS) $(DEBUG_FLAG) getSumOfProbabilities.cpp
+	$(CXX) $(INCS) $(CFLAGS) $(CXXFLAGS) $(DEBUG_FLAG) getSumOfProbabilities.cpp
 
 
 #CLEAN BINARIES

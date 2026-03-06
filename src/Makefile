@@ -1,17 +1,19 @@
-CXX = icpx
+CXX = g++
 
 # Specify the source files, the target files, 
 # and the install directory 
 SOURCES  = quantumRegister.cpp quantumGate.cpp quantumAlgorithms.cpp utils.cpp 
 TARGET_LIB = libtmfqsfs.so
 INSTALLDIR  = ../lib64
-#INCS  = -I /usr/local/zfp/include
-#LIBS = -L /usr/local/zfp/lib64 -lzfp -lstdc++
 INCS  = -I ./ -I ../include
 LIBS =  
-CXXFLAGS += -fPIC -std=c++17 -Wall -Wextra $(INCS) $(LIBS)
 
-# Specify extensions of files to delete when cleaning
+ifeq ($(USE_BLOSC), 1)
+CXXFLAGS += -DUSE_BLOSC
+LIBS += -lblosc2
+endif
+
+CXXFLAGS += -fPIC -std=c++17 -Wall -Wextra $(INCS)
 CLEANEXTS   = o so
 
 
@@ -22,7 +24,7 @@ all: $(TARGET_LIB)
 # subst is the search-and-replace 
 # function demonstrated in Recipe 1.16
 $(TARGET_LIB): $(subst .cpp,.o,$(SOURCES)) 
-	$(CXX) -shared -fPIC $(LDFLAGS) -o $@ $^
+	$(CXX) -shared -fPIC $(LDFLAGS) -o $@ $^ $(LIBS)
 
 %.o: %.cpp
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $<

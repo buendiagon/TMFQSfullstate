@@ -33,8 +33,8 @@ static StateList sanitizeStates(const StateList &input, unsigned int totalStates
 	return states;
 }
 
-// Sample one basis state according to probabilities and collapse the register.
-static unsigned int measureStateAndCollapse(QuantumRegister &qureg, unsigned int totalStates) {
+// Sample one basis state according to probabilities.
+static unsigned int measureState(QuantumRegister &qureg, unsigned int totalStates) {
 	double randomValue = getRandomNumber();
 	double cumulativeProbability = 0.0;
 	unsigned int measuredState = totalStates - 1;
@@ -46,11 +46,49 @@ static unsigned int measureStateAndCollapse(QuantumRegister &qureg, unsigned int
 			break;
 		}
 	}
-
-	fill(qureg.amplitudes.begin(), qureg.amplitudes.end(), 0.0);
-	qureg.amplitudes[2 * measuredState] = 1.0;
 	return measuredState;
 }
+
+#ifdef USE_BLOSC
+// Sample directly from compressed chunks to avoid full-state decompression at the end.
+static unsigned int measureStateCompressed(const QuantumRegister &qureg, unsigned int totalStates) {
+	if (!qureg.isCompressed || qureg.compressedSchunk == nullptr) {
+		return totalStates - 1;
+	}
+
+	const double randomValue = getRandomNumber();
+	double cumulativeProbability = 0.0;
+	const size_t elemsPerChunk = QuantumRegister::CHUNK_STATES * 2;
+	const size_t totalElems = static_cast<size_t>(totalStates) * 2;
+	vector<double> chunkBuffer(elemsPerChunk, 0.0);
+
+	for (int64_t chunkIndex = 0; chunkIndex < qureg.compressedSchunk->nchunks; ++chunkIndex) {
+		size_t offset = static_cast<size_t>(chunkIndex) * elemsPerChunk;
+		size_t count = min(elemsPerChunk, totalElems - offset);
+		int dsz = blosc2_schunk_decompress_chunk(
+			qureg.compressedSchunk,
+			chunkIndex,
+			chunkBuffer.data(),
+			static_cast<int32_t>(count * sizeof(double)));
+		if (dsz < 0) {
+			return totalStates - 1;
+		}
+
+		const unsigned int statesInChunk = static_cast<unsigned int>(count / 2);
+		const unsigned int chunkStateBase = static_cast<unsigned int>(chunkIndex) * QuantumRegister::CHUNK_STATES;
+		for (unsigned int localState = 0; localState < statesInChunk; ++localState) {
+			const double real = chunkBuffer[2 * localState];
+			const double imag = chunkBuffer[2 * localState + 1];
+			cumulativeProbability += real * real + imag * imag;
+			if (randomValue <= cumulativeProbability) {
+				return chunkStateBase + localState;
+			}
+		}
+	}
+
+	return totalStates - 1;
+}
+#endif
 
 // Prepare |psi> as a uniform superposition over selected basis states.
 static void loadUniformSuperposition(QuantumRegister &qureg, const StateList &basisStates) {
@@ -63,13 +101,83 @@ static void loadUniformSuperposition(QuantumRegister &qureg, const StateList &ba
 	}
 }
 
+#ifdef USE_BLOSC
+// Build the initial superposition directly into compressed chunks.
+static bool loadUniformSuperpositionCompressed(
+	QuantumRegister &qureg,
+	unsigned int qubitCount,
+	const StateList &basisStates) {
+	if (basisStates.empty()) {
+		return false;
+	}
+
+	qureg.numQubits = qubitCount;
+	qureg.numStates = 1u << qubitCount;
+	qureg.amplitudes.clear();
+	qureg.states.clear();
+	if (qureg.compressedSchunk) {
+		blosc2_schunk_free(qureg.compressedSchunk);
+		qureg.compressedSchunk = nullptr;
+	}
+	qureg.isCompressed = false;
+
+	blosc2_cparams cparams = BLOSC2_CPARAMS_DEFAULTS;
+	cparams.compcode = BLOSC_LZ4;
+	cparams.clevel = 1;
+	cparams.nthreads = 1;
+	cparams.typesize = sizeof(double);
+	cparams.filters[BLOSC2_MAX_FILTERS - 1] = BLOSC_SHUFFLE;
+
+	blosc2_storage storage = BLOSC2_STORAGE_DEFAULTS;
+	storage.cparams = &cparams;
+
+	qureg.compressedSchunk = blosc2_schunk_new(&storage);
+	if (!qureg.compressedSchunk) {
+		return false;
+	}
+
+	const unsigned int totalStates = 1u << qubitCount;
+	const double realAmplitude = 1.0 / sqrt(static_cast<double>(basisStates.size()));
+	vector<double> chunkBuffer(QuantumRegister::CHUNK_STATES * 2, 0.0);
+	size_t basisPos = 0;
+
+	for (unsigned int chunkBase = 0; chunkBase < totalStates; chunkBase += QuantumRegister::CHUNK_STATES) {
+		const unsigned int statesInChunk = min(
+			QuantumRegister::CHUNK_STATES,
+			static_cast<size_t>(totalStates - chunkBase));
+		fill(chunkBuffer.begin(), chunkBuffer.begin() + static_cast<size_t>(statesInChunk) * 2, 0.0);
+
+		while (basisPos < basisStates.size() && basisStates[basisPos] < chunkBase + statesInChunk) {
+			const unsigned int localState = basisStates[basisPos] - chunkBase;
+			chunkBuffer[2 * localState] = realAmplitude;
+			chunkBuffer[2 * localState + 1] = 0.0;
+			++basisPos;
+		}
+
+		int64_t nchunks = blosc2_schunk_append_buffer(
+			qureg.compressedSchunk,
+			chunkBuffer.data(),
+			static_cast<int32_t>(statesInChunk * 2 * sizeof(double)));
+		if (nchunks < 0) {
+			blosc2_schunk_free(qureg.compressedSchunk);
+			qureg.compressedSchunk = nullptr;
+			return false;
+		}
+	}
+
+	qureg.isCompressed = true;
+	return true;
+}
+#endif
+
 // Edit this function to define the input state set for qftG.
 static StateList chooseInputStates(unsigned int totalStates) {
 	StateList states;
 
 	// Default example: all even states.
 	for (unsigned int x = 0;; ++x) {
-		unsigned int y = 8u * x + (x % 2u);
+		// unsigned int y = 8u * x + (x % 2u);
+		unsigned int y = 2*x;
 		if (y >= totalStates) break;
 		states.push_back(y);
 	}
@@ -133,11 +241,36 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
+#ifdef USE_BLOSC
+	QuantumRegister qureg;
+	const size_t stateBytes = static_cast<size_t>(totalStates) * 2 * sizeof(double);
+	const size_t compressionThresholdBytes = 8u * 1024u * 1024u;  // below this, compression overhead dominates
+	if (stateBytes >= compressionThresholdBytes) {
+		if (!loadUniformSuperpositionCompressed(qureg, qubitCount, selectedStates)) {
+			cout << "Failed to build compressed initial state." << endl;
+			return 1;
+		}
+	} else {
+		qureg.setSize(qubitCount);
+		loadUniformSuperposition(qureg, selectedStates);
+	}
+#else
 	QuantumRegister qureg(qubitCount);
 	loadUniformSuperposition(qureg, selectedStates);
+#endif
+
 	quantumFourierTransform(&qureg);
 
-	const unsigned int measuredState = measureStateAndCollapse(qureg, totalStates);
+	unsigned int measuredState = 0;
+#ifdef USE_BLOSC
+	if (qureg.isCompressed) {
+		measuredState = measureStateCompressed(qureg, totalStates);
+	} else {
+		measuredState = measureState(qureg, totalStates);
+	}
+#else
+	measuredState = measureState(qureg, totalStates);
+#endif
 	printResult(measuredState, totalStates);
 	return 0;
 }

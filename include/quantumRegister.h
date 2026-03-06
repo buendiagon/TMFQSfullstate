@@ -10,6 +10,10 @@
 #include "quantumGate.h"
 #include <iomanip>
 
+#ifdef USE_BLOSC
+#include <blosc2.h>
+#endif
+
 using namespace std;
 
 class QuantumRegister {
@@ -17,6 +21,13 @@ class QuantumRegister {
 	public:
 		unsigned int numQubits, numStates;
 		AmplitudesVector amplitudes;
+#ifdef USE_BLOSC
+		static constexpr size_t CHUNK_STATES = 16384; // states per compressed chunk (~256 KB decompressed)
+		blosc2_schunk* compressedSchunk = nullptr;
+		bool isCompressed = false;
+		void compressAmplitudes();
+		void decompressAmplitudes();
+#endif
 		StatesVector states;
 
 		//Constructors ###################################
