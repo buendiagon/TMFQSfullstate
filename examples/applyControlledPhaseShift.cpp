@@ -13,7 +13,6 @@ int main(int argc, char *argv[]){
 		return 1;
 	}
    else{
-		int i, j;
 		unsigned int numQubits = 0, controlQubit, targetQubit, initState;
 		numQubits = atoi(argv[1]);
 		controlQubit = atoi(argv[2]);

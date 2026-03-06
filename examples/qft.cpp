@@ -22,7 +22,7 @@ int main(int argc, char *argv[]) {
 
 		//cout << endl << "Initial amplitudes" << endl;
 		//qureg.printStatesVector();
-		quantumFourierTransform(&qureg);
+		quantumFourierTransform(qureg);
 		//qureg.printStatesVector();
 
 		return 0;

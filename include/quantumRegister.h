@@ -1,86 +1,57 @@
 #ifndef QUANTUM_REGISTER_INCLUDE
 #define QUANTUM_REGISTER_INCLUDE
 
-#include <iostream>
-#include <cstdio>
-#include <cstdlib>
-#include <functional>
-#include <algorithm>
-#include "types.h"
+#include <iosfwd>
+#include <memory>
+
 #include "quantumGate.h"
-#include <iomanip>
-
-#ifdef USE_BLOSC
-#include <blosc2.h>
-#endif
-
-using namespace std;
+#include "storage/IStateBackend.h"
+#include "storage/StateBackendFactory.h"
+#include "types.h"
 
 class QuantumRegister {
 
 	public:
-		unsigned int numQubits, numStates;
-		AmplitudesVector amplitudes;
-#ifdef USE_BLOSC
-		static constexpr size_t CHUNK_STATES = 16384; // states per compressed chunk (~256 KB decompressed)
-		blosc2_schunk* compressedSchunk = nullptr;
-		bool isCompressed = false;
-		void compressAmplitudes();
-		void decompressAmplitudes();
-#endif
-		StatesVector states;
-
-		//Constructors ###################################
 		QuantumRegister();
-		QuantumRegister(unsigned int numQubits);
-		QuantumRegister(unsigned int numQubits, unsigned int initState);
-		QuantumRegister(unsigned int numQubits, unsigned int initState, Amplitude amp);
-		//QuantumRegister(unsigned int numQubits, bool isRandom);
-		QuantumRegister(unsigned int numQubits, string filePath);
-		QuantumRegister(const QuantumRegister&);
+		explicit QuantumRegister(unsigned int numQubits, const RegisterConfig &cfg = {});
+		QuantumRegister(unsigned int numQubits, unsigned int initState, const RegisterConfig &cfg = {});
+		QuantumRegister(unsigned int numQubits, unsigned int initState, Amplitude amp, const RegisterConfig &cfg = {});
+		QuantumRegister(unsigned int numQubits, AmplitudesVector amplitudes, const RegisterConfig &cfg = {});
+		QuantumRegister(const QuantumRegister &);
+		QuantumRegister(QuantumRegister&&) noexcept = default;
+		QuantumRegister& operator=(const QuantumRegister &);
+		QuantumRegister& operator=(QuantumRegister&&) noexcept = default;
 
+		unsigned int qubitCount() const;
+		unsigned int stateCount() const;
+		int getSize() const;
+		double probability(unsigned int state) const;
+		double probabilitySumatory() const;
+		Amplitude amplitude(unsigned int state) const;
+		void setAmplitude(unsigned int state, Amplitude amp);
+		void loadAmplitudes(AmplitudesVector amplitudes);
+		void initUniformSuperposition(const StatesVector &basisStates);
+		StorageStrategyKind storageStrategy() const;
 
-		//Accessors ######################################
-		//
-		int getSize();
+		void printStatesVector() const;
+		friend std::ostream &operator << (std::ostream &os, const QuantumRegister &reg);
 
-		//Get the Magnitud or Modulus of the element i-th
-		double probability(unsigned int state);
-
-		//Get the sum of magnitudes of the statesVector
-		double probabilitySumatory();
-
-
-		//Get the amplitude of specific state
-		Amplitude amplitude(unsigned int state);
-
-		static StatesVector allStates();
-
-		//Set methods ####################################
-		//
-		void setSize(unsigned int);
-
-		// Fill the states vector ramdonly
-		void fillStatesVector();
-
-		//Miscelaneous methods ###########################
-		//Print states vector
-		void printStatesVector();
-		friend std::ostream &operator << (std::ostream &os, QuantumRegister &reg);
-		string getNthBit(unsigned int state, unsigned int qubit);
-		int findState(unsigned int state);
-		double getProbability(unsigned int state);
-
-		//Destructor #####################################
 		~QuantumRegister();
 
-
-		//Quantum Gates operations
-		void applyGate(QuantumGate g, IntegerVector v);
+		void applyGate(const QuantumGate &g, const IntegerVector &v);
 		void Hadamard(unsigned int qubit);
 		void ControlledPhaseShift(unsigned int controlQubit, unsigned int targetQubit, double theta);
 		void ControlledNot(unsigned int controlQubit, unsigned int targetQubit);
 		void Swap(unsigned int qubit1, unsigned int qubit2);
+
+	private:
+		unsigned int numQubits_ = 0;
+		unsigned int numStates_ = 0;
+		RegisterConfig config_{};
+		StorageStrategyKind resolvedStrategy_ = StorageStrategyKind::Dense;
+		std::unique_ptr<IStateBackend> backend_;
+
+		void initializeBackend(unsigned int qubits);
 };
 
 #endif //QUANTUM_REGISTER_INCLUDE

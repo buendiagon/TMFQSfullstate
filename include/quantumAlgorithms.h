@@ -5,7 +5,7 @@
 
 inline constexpr double pi = 3.14159265358979323846;
 
-void quantumFourierTransform(QuantumRegister *qureg);
+void quantumFourierTransform(QuantumRegister &qureg);
 unsigned int Grover(unsigned int omega, unsigned int numBits, bool verbose);
 
 

@@ -1,34 +1,33 @@
 #ifndef QUANTUM_GATE_INCLUDE
 #define QUANTUM_GATE_INCLUDE
 
-#include <iostream>
-#include <cstdio>
-#include <cstdlib>
-#include <cmath>
-#include "types.h"
-#include "utils.h"
+#include <iosfwd>
+#include <vector>
 
-using namespace std;
+#include "types.h"
 
 class QuantumGate {
 
 	private:
-		Amplitude **matrix;
+		std::vector<Amplitude> matrix_;
 
 	public:
-		unsigned int dimension;
-		QuantumGate();
-		QuantumGate(unsigned int dimension);
-		QuantumGate(const QuantumGate& other);  // Copy constructor
-		QuantumGate(QuantumGate&& other) noexcept;  // Move constructor
-		QuantumGate& operator=(const QuantumGate& other);  // Assignment operator
-		QuantumGate& operator=(QuantumGate&& other) noexcept;  // Move assignment operator
-		~QuantumGate();  // Destructor
+		unsigned int dimension = 0;
+
+		QuantumGate() = default;
+		explicit QuantumGate(unsigned int dimension);
+		QuantumGate(const QuantumGate&) = default;
+		QuantumGate(QuantumGate&&) noexcept = default;
+		QuantumGate& operator=(const QuantumGate&) = default;
+		QuantumGate& operator=(QuantumGate&&) noexcept = default;
+		~QuantumGate() = default;
+
 		Amplitude * operator[](unsigned int i);
-		QuantumGate operator*(Amplitude x);
-		QuantumGate operator*(QuantumGate &qg);
-		void printQuantumGate();
-		friend std::ostream &operator<<(std::ostream &os, QuantumGate &qg);
+		const Amplitude * operator[](unsigned int i) const;
+		QuantumGate operator*(Amplitude x) const;
+		QuantumGate operator*(const QuantumGate &qg) const;
+		void printQuantumGate() const;
+		friend std::ostream &operator<<(std::ostream &os, const QuantumGate &qg);
 
 		static QuantumGate Identity(unsigned int dimension);
 		static QuantumGate Hadamard();
@@ -44,13 +43,9 @@ class QuantumGate {
 		static QuantumGate Ising(double theta);
 		static QuantumGate QFT(unsigned int num_qubits);
 		static QuantumGate IQFT(unsigned int num_qubits);
-
-		// Matrices to be created upon initialization.
-		// const static QuantumGate MHadamard;
-
 };
 
 // For left multiplication.
-QuantumGate operator*(Amplitude x, QuantumGate &U);
+QuantumGate operator*(Amplitude x, const QuantumGate &U);
 
-#endif
+#endif // QUANTUM_GATE_INCLUDE

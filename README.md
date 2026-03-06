@@ -57,19 +57,10 @@ The simulator is designed for:
 
 ## Requirements
 
-- **Compiler**: Intel® oneAPI DPC++/C++ Compiler (`icpx`) with C++17 support
+- **Compiler**: Intel oneAPI `icpx` (preferred, auto-detected) or `g++` with C++17 support
 - **OS**: Linux (tested on Fedora)
 - **Build**: GNU Make
-
-### Setting up Intel oneAPI
-
-Before compiling, initialize the Intel oneAPI environment:
-
-```bash
-source /opt/intel/oneapi/setvars.sh
-```
-
-Or add to your shell profile for persistent configuration.
+- **Optional dependency**: Blosc2 (`libblosc2`) for compressed storage strategy
 
 ---
 
@@ -90,11 +81,16 @@ make clean
 
 # Build the library and examples
 make
+
+# Build integration tests (optional)
+make tests
+
 ```
 
 This will:
 1. Compile the shared library `libtmfqsfs.so` in `lib64/`
 2. Compile all example programs in `bin/`
+3. Enable Blosc runtime strategy automatically if `blosc2.h` is available on the system
 
 ### Verify Installation
 
@@ -145,6 +141,20 @@ export LD_LIBRARY_PATH="/path/to/QSTest/lib64:$LD_LIBRARY_PATH"
 ./bin/applyControlledPhaseShift <num_qubits> <control> <target> <theta>
 ```
 
+#### QFTG With Runtime Storage Strategy
+```bash
+./bin/qftG <num_qubits> [--strategy dense|blosc|auto] [--chunk-states N] [--clevel N] [--nthreads N] [--threshold-mb N]
+
+# Example: force Dense
+./bin/qftG 22 --strategy dense
+
+# Example: force Blosc
+./bin/qftG 22 --strategy blosc --chunk-states 16384 --clevel 1
+
+# Example: auto-select by threshold
+./bin/qftG 22 --strategy auto --threshold-mb 8
+```
+
 ---
 
 ## Performance Profiling (psrecord)
@@ -190,6 +200,12 @@ QuantumRegister qreg(n);
 // Create a register initialized to a specific state
 QuantumRegister qreg(n, initial_state);
 
+// Create with explicit storage strategy
+RegisterConfig cfg;
+cfg.strategy = StorageStrategyKind::Blosc;
+cfg.blosc.chunkStates = 16384;
+QuantumRegister qreg_compressed(n, cfg);
+
 // Apply quantum gates
 qreg.Hadamard(qubit);
 qreg.ControlledNot(control, target);
@@ -230,7 +246,7 @@ qreg.applyGate(gate, qubits);
 
 // Quantum Fourier Transform
 QuantumRegister qreg(n, initial_state);
-quantumFourierTransform(&qreg);
+quantumFourierTransform(qreg);
 
 // Grover's Search (returns measured state)
 unsigned int result = Grover(marked_state, num_qubits, verbose);
@@ -286,7 +302,7 @@ int main() {
 
 ```bash
 # Compile
-icpx -I /path/to/QSTest/include -L /path/to/QSTest/lib64 -ltmfqsfs myprogram.cpp -o myprogram
+icpx -std=c++17 -I /path/to/QSTest/include -L /path/to/QSTest/lib64 -ltmfqsfs myprogram.cpp -o myprogram
 
 # Run
 export LD_LIBRARY_PATH="/path/to/QSTest/lib64:$LD_LIBRARY_PATH"
@@ -301,22 +317,34 @@ export LD_LIBRARY_PATH="/path/to/QSTest/lib64:$LD_LIBRARY_PATH"
 QSTest/
 ├── include/                  # Header files
 │   ├── tmfqsfs.h            # Main include (includes all headers)
+│   ├── stateSpace.h         # Checked qubit/state-size helpers
 │   ├── quantumRegister.h    # Quantum register class
 │   ├── quantumGate.h        # Quantum gate class
 │   ├── quantumAlgorithms.h  # QFT, Grover, etc.
 │   ├── types.h              # Type definitions (Amplitude, vectors)
-│   └── utils.h              # Utility functions
+│   ├── utils.h              # Utility functions
+│   └── storage/
+│       ├── IStateBackend.h
+│       └── StateBackendFactory.h
 ├── src/                      # Source files
 │   ├── quantumRegister.cpp
 │   ├── quantumGate.cpp
 │   ├── quantumAlgorithms.cpp
 │   ├── utils.cpp
+│   ├── storage/              # Runtime backend strategies
+│   │   ├── DenseStateBackend.cpp
+│   │   ├── BloscStateBackend.cpp
+│   │   └── StateBackendFactory.cpp
 │   └── Makefile
 ├── examples/                 # Example programs
 │   ├── qft.cpp
 │   ├── grover.cpp
 │   ├── applyHadamard.cpp
 │   └── ...
+├── tests/
+│   └── integration/
+│       └── test_bugfixes.cpp
+├── benchmarks/               # Reserved for future benchmark targets
 ├── bin/                      # Compiled binaries
 ├── lib64/                    # Shared library
 │   └── libtmfqsfs.so
@@ -358,5 +386,4 @@ This project is licensed under the terms specified in the [LICENSE](LICENSE) fil
 
 ## Acknowledgments
 
-- Intel for the oneAPI toolkit
 - The quantum computing research community

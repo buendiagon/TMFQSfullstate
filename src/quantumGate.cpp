@@ -1,196 +1,103 @@
 #include "quantumGate.h"
 
-// Constructors
-QuantumGate::QuantumGate(){
-	this->dimension = 0;
-	this->matrix = nullptr;
-}
-QuantumGate::QuantumGate(unsigned int dimension){
-	this->dimension = dimension;
-	unsigned int i, j;
-	matrix = new Amplitude *[dimension];
-	for (unsigned int i = 0; i < dimension; i++)
-		matrix[i] = new Amplitude[dimension];
-	for (i = 0; i < dimension; i++) {
-		for (j = 0; j < dimension; j++) {
-			matrix[i][j].real = 0.0;
-			matrix[i][j].imag = 0.0;
-		}
+#include <cmath>
+#include <iostream>
+#include <stdexcept>
+
+#include "utils.h"
+
+// Matrix is stored in a contiguous row-major buffer.
+QuantumGate::QuantumGate(unsigned int dimension) : matrix_((size_t)dimension * dimension), dimension(dimension) {
+	for(Amplitude &cell : matrix_) {
+		cell.real = 0.0;
+		cell.imag = 0.0;
 	}
 }
 
-// Destructor
-QuantumGate::~QuantumGate(){
-	if (matrix != nullptr) {
-		for (unsigned int i = 0; i < dimension; i++) {
-			delete[] matrix[i];
-		}
-		delete[] matrix;
-	}
-}
-
-// Copy Constructor
-QuantumGate::QuantumGate(const QuantumGate& other){
-	this->dimension = other.dimension;
-	if (other.matrix != nullptr && dimension > 0) {
-		matrix = new Amplitude *[dimension];
-		for (unsigned int i = 0; i < dimension; i++) {
-			matrix[i] = new Amplitude[dimension];
-			for (unsigned int j = 0; j < dimension; j++) {
-				matrix[i][j] = other.matrix[i][j];
-			}
-		}
-	} else {
-		matrix = nullptr;
-	}
-}
-
-// Move Constructor
-QuantumGate::QuantumGate(QuantumGate&& other) noexcept {
-	this->dimension = other.dimension;
-	this->matrix = other.matrix;
-	other.dimension = 0;
-	other.matrix = nullptr;
-}
-
-// Assignment Operator
-QuantumGate& QuantumGate::operator=(const QuantumGate& other){
-	if (this != &other) {
-		// Free existing resources
-		if (matrix != nullptr) {
-			for (unsigned int i = 0; i < dimension; i++) {
-				delete[] matrix[i];
-			}
-			delete[] matrix;
-		}
-		// Copy from other
-		this->dimension = other.dimension;
-		if (other.matrix != nullptr && dimension > 0) {
-			matrix = new Amplitude *[dimension];
-			for (unsigned int i = 0; i < dimension; i++) {
-				matrix[i] = new Amplitude[dimension];
-				for (unsigned int j = 0; j < dimension; j++) {
-					matrix[i][j] = other.matrix[i][j];
-				}
-			}
-		} else {
-			matrix = nullptr;
-		}
-	}
-	return *this;
-}
-
-// Move Assignment Operator
-QuantumGate& QuantumGate::operator=(QuantumGate&& other) noexcept {
-	if (this != &other) {
-		// Free existing resources
-		if (matrix != nullptr) {
-			for (unsigned int i = 0; i < dimension; i++) {
-				delete[] matrix[i];
-			}
-			delete[] matrix;
-		}
-		// Move from other
-		this->dimension = other.dimension;
-		this->matrix = other.matrix;
-		other.dimension = 0;
-		other.matrix = nullptr;
-	}
-	return *this;
-}
-
-// Operator []
+// Row accessor for mutable operations like gate construction.
 Amplitude *QuantumGate::operator[](unsigned int i) {
-	return matrix[i];
+	if(i >= dimension) {
+		throw std::out_of_range("QuantumGate row index out of range");
+	}
+	return matrix_.data() + (size_t)i * dimension;
 }
 
+// Const row accessor for read-only arithmetic paths.
+const Amplitude *QuantumGate::operator[](unsigned int i) const {
+	if(i >= dimension) {
+		throw std::out_of_range("QuantumGate row index out of range");
+	}
+	return matrix_.data() + (size_t)i * dimension;
+}
 
-// Operator * for QuantumGate and Scalar multiplication 
-QuantumGate QuantumGate::operator*(Amplitude x) {
+// Scalar multiplication of all matrix entries.
+QuantumGate QuantumGate::operator*(Amplitude x) const {
 	QuantumGate result(dimension);
-	unsigned int i, j;
-	for (i = 0; i < dimension; i++) {
-		for (j = 0; j < dimension; j++) {
-			//result[i][j].real = matrix[i][j].real * x.real - matrix[i][j].imag * x.imag;
-			//result[i][j].imag = matrix[i][j].real * x.imag + matrix[i][j].imag * x.real;
-			result[i][j] = amplitudeMult(matrix[i][j], x);
+	for(unsigned int i = 0; i < dimension; i++) {
+		for(unsigned int j = 0; j < dimension; j++) {
+			result[i][j] = amplitudeMult((*this)[i][j], x);
 		}
 	}
 	return result;
 }
 
-// Left scalar multiplication, nonmember function
-QuantumGate operator*(Amplitude x, QuantumGate &U) {
+QuantumGate operator*(Amplitude x, const QuantumGate &U) {
 	return U * x;
 }
 
-
-// Operator * for two Quantum gates multiplication 
-QuantumGate QuantumGate::operator*(QuantumGate &qg){
+// Standard matrix multiplication (this * qg).
+QuantumGate QuantumGate::operator*(const QuantumGate &qg) const {
 	QuantumGate result(dimension);
-	unsigned int i, j;
-   if (qg.dimension != dimension) {
-      printf("Matrices cannot be multiplied; different dimensions\n");
-      return result;
-   }  
-	for (i = 0; i < dimension; i++) {
-		for (j = 0; j < dimension; j++) {
-         for (unsigned int k = 0; k < dimension; k++) {
-            //result[i][j] += matrix[i][k] * qg[k][j];
-            result[i][j] = amplitudeAdd(result[i][j], amplitudeMult(matrix[i][k], qg[k][j]));
-         }
-      }
-   }
-   return result;
+	if(qg.dimension != dimension) {
+		throw std::invalid_argument("QuantumGate dimensions differ in multiplication");
+	}
+	for(unsigned int i = 0; i < dimension; i++) {
+		for(unsigned int j = 0; j < dimension; j++) {
+			for(unsigned int k = 0; k < dimension; k++) {
+				result[i][j] = amplitudeAdd(result[i][j], amplitudeMult((*this)[i][k], qg[k][j]));
+			}
+		}
+	}
+	return result;
 }
 
-
-// Override operator to print a Quantum Gate
-std::ostream &operator << (std::ostream &os, QuantumGate &qg) {
-	unsigned int i, j;
-	for (i = 0; i < qg.dimension; i++) {
-		for (j = 0; j < qg.dimension; j++) {
-			cout << qg[i][j].real << " " << qg[i][j].imag << "\t";
+std::ostream &operator<<(std::ostream &os, const QuantumGate &qg) {
+	for(unsigned int i = 0; i < qg.dimension; i++) {
+		for(unsigned int j = 0; j < qg.dimension; j++) {
+			os << qg[i][j].real << " " << qg[i][j].imag << "\t";
 		}
-		cout << "\n";
+		os << "\n";
 	}
 	return os;
 }
 
-
-// Print Quantum Gate
-void QuantumGate::printQuantumGate() {
-   std::cout << *this;
+void QuantumGate::printQuantumGate() const {
+	std::cout << *this;
 }
 
-
-// Specific Quantum Gates
 QuantumGate QuantumGate::Identity(unsigned int dimension){
 	QuantumGate g(dimension);
-	unsigned int i;
-	for (i = 0; i < dimension; i++){
+	for(unsigned int i = 0; i < dimension; i++){
 		g[i][i].real = 1.0;
 		g[i][i].imag = 0.0;
 	}
 	return g;
 }
 
-
-
 QuantumGate QuantumGate::Hadamard(){
 	QuantumGate g(2);
-	g[0][0].real = 1/sqrt(2); 
+	g[0][0].real = 1 / std::sqrt(2.0);
 	g[0][0].imag = 0.0;
-	g[0][1].real = 1/sqrt(2); 
+	g[0][1].real = 1 / std::sqrt(2.0);
 	g[0][1].imag = 0.0;
-	g[1][0].real = 1/sqrt(2); 
+	g[1][0].real = 1 / std::sqrt(2.0);
 	g[1][0].imag = 0.0;
-	g[1][1].real = -1/sqrt(2); 
+	g[1][1].real = -1 / std::sqrt(2.0);
 	g[1][1].imag = 0.0;
 	return g;
 }
 
-
+// Controlled phase matrix diag(1,1,1,e^{i theta}).
 QuantumGate QuantumGate::ControlledPhaseShift(double theta){
 	QuantumGate g(4);
 	Amplitude amp, ampResult;
@@ -205,13 +112,11 @@ QuantumGate QuantumGate::ControlledPhaseShift(double theta){
 	return g;
 }
 
-
 QuantumGate QuantumGate::ControlledNot() {
-	QuantumGate g(4); 
+	QuantumGate g(4);
 	g[0][0].real = 1.0;
 	g[1][1].real = 1.0;
 	g[2][3].real = 1.0;
 	g[3][2].real = 1.0;
 	return g;
 }
-

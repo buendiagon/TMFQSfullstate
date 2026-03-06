@@ -96,7 +96,7 @@ void testQFT() {
     cout << "=== QFT functional test ===" << endl;
 
     QuantumRegister qureg(3, 0);  // |000>
-    quantumFourierTransform(&qureg);
+    quantumFourierTransform(qureg);
 
     // QFT of |0> should give equal superposition: all amplitudes = 1/sqrt(8)
     double expectedAmp = 1.0 / sqrt(8.0);
@@ -108,6 +108,7 @@ void testQFT() {
         cout << "    |" << s << "> : " << amp.real << " + " << amp.imag << "i" << endl;
         if (!approxEqual(amp.real, expectedAmp, 1e-6)) allCorrect = false;
     }
+    assert(allCorrect && "QFT|000> amplitudes should be uniform");
 
     double probSum = qureg.probabilitySumatory();
     cout << "  Probability sum = " << probSum << " (expect 1.0)" << endl;

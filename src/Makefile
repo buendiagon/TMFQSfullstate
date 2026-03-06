@@ -1,44 +1,45 @@
-CXX = g++
+ifneq ($(filter default undefined,$(origin CXX)),)
+ifneq ($(shell command -v icpx 2>/dev/null),)
+CXX := icpx
+else
+CXX := g++
+endif
+endif
 
-# Specify the source files, the target files, 
-# and the install directory 
-SOURCES  = quantumRegister.cpp quantumGate.cpp quantumAlgorithms.cpp utils.cpp 
+SOURCES = quantumRegister.cpp quantumGate.cpp quantumAlgorithms.cpp utils.cpp \
+          storage/StateBackendFactory.cpp storage/DenseStateBackend.cpp storage/BloscStateBackend.cpp
 TARGET_LIB = libtmfqsfs.so
-INSTALLDIR  = ../lib64
-INCS  = -I ./ -I ../include
-LIBS =  
+INSTALLDIR = ../lib64
+INCS = -I ./ -I ../include
+LIBS =
 
-ifeq ($(USE_BLOSC), 1)
-CXXFLAGS += -DUSE_BLOSC
+ifneq ($(wildcard /usr/include/blosc2.h),)
+CXXFLAGS += -DHAVE_BLOSC2
 LIBS += -lblosc2
 endif
 
 CXXFLAGS += -fPIC -std=c++17 -Wall -Wextra $(INCS)
-CLEANEXTS   = o so
-
+CLEANEXTS = o so
 
 .PHONY: all
 all: $(TARGET_LIB)
 
-# Build lib*.so from all the *.o;
-# subst is the search-and-replace 
-# function demonstrated in Recipe 1.16
-$(TARGET_LIB): $(subst .cpp,.o,$(SOURCES)) 
+$(TARGET_LIB): $(subst .cpp,.o,$(SOURCES))
 	$(CXX) -shared -fPIC $(LDFLAGS) -o $@ $^ $(LIBS)
 
 %.o: %.cpp
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $<
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 .PHONY: install
 install:
 	mkdir -p $(INSTALLDIR)
 	cp -p $(TARGET_LIB) $(INSTALLDIR)
 
-.PHONY: clean 
+.PHONY: clean
 clean:
 	for file in $(CLEANEXTS); do rm -f *.$$file; done
+	rm -f storage/*.o storage/*.d
 
-# Generate dependencies of .ccp files on .hpp files
 include $(subst .cpp,.d,$(SOURCES))
 
 %.d: %.cpp

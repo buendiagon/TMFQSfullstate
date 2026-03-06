@@ -2,22 +2,27 @@
 #include <algorithm>
 #include <iostream>
 #include "quantumAlgorithms.h"
+#include "stateSpace.h"
 #include "utils.h"
 
-void quantumFourierTransform(QuantumRegister *qureg) {
-   for(unsigned int j = 0; j < qureg->numQubits; j++){
-      qureg->Hadamard(j);
-		for (unsigned int k = 1; k < qureg->numQubits - j; k++) {
-         qureg->ControlledPhaseShift(j + k, j, M_PI/static_cast<double>(1 << k)); // 1 << j is pow(2, j)
+// In-place QFT using the standard sequence:
+// Hadamard on each qubit, controlled phase rotations, then final bit-reversal swaps.
+void quantumFourierTransform(QuantumRegister &qureg) {
+	unsigned int numQubits = qureg.qubitCount();
+   for(unsigned int j = 0; j < numQubits; j++){
+      qureg.Hadamard(j);
+		for (unsigned int k = 1; k < numQubits - j; k++) {
+         qureg.ControlledPhaseShift(j + k, j, M_PI/static_cast<double>(1 << k)); // 1 << j is pow(2, j)
       }
    }
 	// REVERSE THE REGISTER ORDER
-	for (unsigned int i = 0; i < floor((qureg->numQubits)/2.0); i++){
-		qureg->Swap(i, qureg->numQubits-i-1);
+	for (unsigned int i = 0; i < floor((numQubits)/2.0); i++){
+		qureg.Swap(i, numQubits - i - 1);
 	}
 }
 
 
+// Basic Grover search implementation over 2^numBits states.
 unsigned int Grover(unsigned int omega, unsigned int numBits, bool verbose) {
 	/*
 	Perform a Grover search to find what omega is given the black box
@@ -33,19 +38,18 @@ unsigned int Grover(unsigned int omega, unsigned int numBits, bool verbose) {
 	set_srand() must be called before calling this function.
 	*/
 
-	unsigned int N = 1 << numBits; // 1 << numBits is pow(2, numBits)
+	unsigned int N = checkedStateCount(numBits);
 	if (omega >= N){
 		std::cout << "Number of bits = " << numBits << " is not enough for omega = " << omega << std::endl;
 		return 0;
 	}
 
-	// Uomega is the black box operator.
+	// U_omega flips the phase of the marked basis state |omega>.
 	QuantumGate Uomega = QuantumGate::Identity(N);
 	Uomega[omega][omega].real = -1.0;
 	Uomega[omega][omega].imag = 0.0;
 
-	// The Grover diffusion operator, 2|s><s| - I, where |s>
-	// is equal superposition of all states.
+	// Diffusion operator D = 2|s><s| - I.
 	QuantumGate D(N);
 	for (unsigned int i = 0; i < D.dimension; i++) {
 		for (unsigned int j = 0; j < D.dimension; j++) {
@@ -63,17 +67,17 @@ unsigned int Grover(unsigned int omega, unsigned int numBits, bool verbose) {
 
 	QuantumRegister qureg(numBits); IntegerVector v;
 
-	// Begin with equal superposition.
-	for (unsigned int i = 0; i < qureg.numQubits; i++){
+	// Start from uniform superposition.
+	for (unsigned int i = 0; i < qureg.qubitCount(); i++){
 		qureg.Hadamard(i); v.push_back(i);
 	}
 
-	// iterate O(sqrt(N)) times. where we stop is important!
+	// Iterate the Grover operator approximately pi/4*sqrt(N) times.
 	for (unsigned int k = 0; k < (unsigned int)round(M_PI / (4.0*asin(1.0/sqrt((double)N)))-0.5); k++) {
-		// Uomega operator is applied to the whole system
+		// Apply oracle.
 		qureg.applyGate(Uomega, v);
 
-		// Apply the Grover diffusion operator.
+		// Apply diffusion.
 		/*
 		Instead of r.apply_gate(D, v), could do the following, which is more physically realistic I think.
 
@@ -93,7 +97,7 @@ unsigned int Grover(unsigned int omega, unsigned int numBits, bool verbose) {
 	// Collapse the system. There is a high probability that we get
 	// the basis element corresponding to omega.
 
-	// Measurement: sample a state from the probability distribution |amplitude|^2
+	// Measurement: sample from |amplitude|^2 distribution.
 	double rnd = getRandomNumber();
 	double cumulativeProb = 0.0;
 	for (unsigned int s = 0; s < N; s++) {

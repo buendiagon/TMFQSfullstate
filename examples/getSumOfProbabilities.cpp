@@ -13,12 +13,11 @@ int main(int argc, char *argv[]){
 		return 1;
 	}
    else{
-		int i, j;
-		unsigned int numberOfQubits, qubit;
+		unsigned int numberOfQubits;
 		numberOfQubits = atoi(argv[1]);
 
 		QuantumRegister qreg(numberOfQubits);
-		for(int i=0; i<numberOfQubits; i++){
+		for(unsigned int i = 0; i < numberOfQubits; i++){
 			qreg.Hadamard(i);
 		}
 		qreg.printStatesVector();

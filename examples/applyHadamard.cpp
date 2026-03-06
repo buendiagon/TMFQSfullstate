@@ -13,8 +13,7 @@ int main(int argc, char *argv[]){
 		return 1;
 	}
    else{
-		int i, j;
-		unsigned int numQubits = 0, qubit, initState = 9;
+		unsigned int numQubits = 0, qubit = 0, initState = 9;
 		numQubits = atoi(argv[1]);
 		qubit = atoi(argv[2]);
 		initState = atoi(argv[3]);
@@ -30,7 +29,8 @@ int main(int argc, char *argv[]){
 		amp.real = 1.0;
 		amp.imag = 0.0;
 		QuantumRegister qreg(numQubits, initState, amp);
-		for(int i=0; i<numQubits; i++){
+		(void)qubit;
+		for(unsigned int i = 0; i < numQubits; i++){
 			qreg.Hadamard(i);
 		}
 		//qreg.printStatesVector();
