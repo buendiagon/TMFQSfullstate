@@ -6,15 +6,19 @@
 
 #include "types.h"
 
+// Dense matrix representation of a quantum gate.
+// Matrix entries are stored in row-major order.
 class QuantumGate {
 
 	private:
 		std::vector<Amplitude> matrix_;
 
 	public:
+		// Matrix dimension (e.g., 2 for single-qubit, 4 for two-qubit gates).
 		unsigned int dimension = 0;
 
 		QuantumGate() = default;
+		// Builds an empty square gate matrix of size dimension x dimension.
 		explicit QuantumGate(unsigned int dimension);
 		QuantumGate(const QuantumGate&) = default;
 		QuantumGate(QuantumGate&&) noexcept = default;
@@ -22,13 +26,19 @@ class QuantumGate {
 		QuantumGate& operator=(QuantumGate&&) noexcept = default;
 		~QuantumGate() = default;
 
+		// Row access helper so callers can use gate[i][j] style indexing.
 		Amplitude * operator[](unsigned int i);
 		const Amplitude * operator[](unsigned int i) const;
+
+		// Scalar and matrix multiplication.
 		QuantumGate operator*(Amplitude x) const;
 		QuantumGate operator*(const QuantumGate &qg) const;
+
+		// Human-readable printing utilities.
 		void printQuantumGate() const;
 		friend std::ostream &operator<<(std::ostream &os, const QuantumGate &qg);
 
+		// Standard gates and gate builders.
 		static QuantumGate Identity(unsigned int dimension);
 		static QuantumGate Hadamard();
 		static QuantumGate PauliX();
@@ -41,6 +51,7 @@ class QuantumGate {
 		static QuantumGate ControlledPhaseShift(double theta);
 		static QuantumGate Swap();
 		static QuantumGate Ising(double theta);
+		// Full n-qubit Fourier transform matrices.
 		static QuantumGate QFT(unsigned int num_qubits);
 		static QuantumGate IQFT(unsigned int num_qubits);
 };
