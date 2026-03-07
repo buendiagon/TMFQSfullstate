@@ -12,11 +12,9 @@ class QuantumGate {
 
 	private:
 		std::vector<Amplitude> matrix_;
+		unsigned int dimension_ = 0;
 
 	public:
-		// Matrix dimension (e.g., 2 for single-qubit, 4 for two-qubit gates).
-		unsigned int dimension = 0;
-
 		QuantumGate() = default;
 		// Builds an empty square gate matrix of size dimension x dimension.
 		explicit QuantumGate(unsigned int dimension);
@@ -29,6 +27,8 @@ class QuantumGate {
 		// Row access helper so callers can use gate[i][j] style indexing.
 		Amplitude * operator[](unsigned int i);
 		const Amplitude * operator[](unsigned int i) const;
+		// Matrix dimension (e.g., 2 for single-qubit, 4 for two-qubit gates).
+		unsigned int dimension() const noexcept;
 
 		// Scalar and matrix multiplication.
 		QuantumGate operator*(Amplitude x) const;

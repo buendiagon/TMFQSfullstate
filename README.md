@@ -143,7 +143,7 @@ export LD_LIBRARY_PATH="/path/to/QSTest/lib64:$LD_LIBRARY_PATH"
 
 #### QFTG With Runtime Storage Strategy
 ```bash
-./bin/qftG <num_qubits> [--strategy dense|blosc|auto] [--chunk-states N] [--clevel N] [--nthreads N] [--threshold-mb N]
+./bin/qftG <num_qubits> [--strategy dense|blosc|auto] [--chunk-states N] [--cache-slots N] [--clevel N] [--nthreads N] [--threshold-mb N]
 
 # Example: force Dense
 ./bin/qftG 22 --strategy dense
@@ -204,6 +204,7 @@ QuantumRegister qreg(n, initial_state);
 RegisterConfig cfg;
 cfg.strategy = StorageStrategyKind::Blosc;
 cfg.blosc.chunkStates = 16384;
+cfg.blosc.gateCacheSlots = 8;
 QuantumRegister qreg_compressed(n, cfg);
 
 // Apply quantum gates
@@ -215,10 +216,13 @@ qreg.Swap(qubit1, qubit2);
 // Query state
 Amplitude amp = qreg.amplitude(state);
 double prob = qreg.probability(state);
-double total = qreg.probabilitySumatory();  // Should equal 1.0
+double total = qreg.totalProbability();  // Should equal 1.0
+unsigned int sampled = qreg.measure();
+size_t elemCount = qreg.amplitudeElementCount();
 
 // Display
-qreg.printStatesVector();
+qreg.printStatesVector();        // default epsilon = 1e-12
+qreg.printStatesVector(1e-9);   // custom epsilon
 ```
 
 ### QuantumGate Class
@@ -235,7 +239,7 @@ QuantumGate result = gate1 * gate2;  // Matrix multiplication
 QuantumGate scaled = gate * scalar;  // Scalar multiplication
 
 // Apply arbitrary gate to register
-IntegerVector qubits = {0, 1};  // Target qubits
+QubitList qubits = {0, 1};  // Target qubits
 qreg.applyGate(gate, qubits);
 ```
 

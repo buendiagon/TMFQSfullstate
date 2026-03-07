@@ -1,9 +1,13 @@
 #include "storage/IStateBackend.h"
+#include "storage/GateBlockApply.h"
 #include "stateSpace.h"
+#include "validation.h"
 
 #include <algorithm>
 #include <cmath>
+#include <ostream>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -14,11 +18,45 @@ class DenseStateBackend : public IStateBackend {
 		unsigned int numQubits_ = 0;
 		unsigned int numStates_ = 0;
 		AmplitudesVector amplitudes_;
+		GateBlockWorkspace gateWorkspace_;
 
-		void validateState(unsigned int state) const {
+		void ensureInitialized(const char *operation) const {
+			if(numStates_ == 0 || amplitudes_.empty()) {
+				throw std::logic_error(std::string("DenseStateBackend is not initialized for ") + operation);
+			}
+		}
+
+		void validateState(StateIndex state) const {
 			if(state >= numStates_) {
 				throw std::out_of_range("State index out of range");
 			}
+		}
+
+		void validateSingleQubitOperation(QubitIndex qubit, const char *opName) const {
+			ensureInitialized(opName);
+			if(qubit >= numQubits_) {
+				throw std::out_of_range("DenseStateBackend single-qubit operation qubit index out of range");
+			}
+		}
+
+		void validateTwoQubitOperation(
+			QubitIndex controlQubit, QubitIndex targetQubit, const char *opName) const {
+			ensureInitialized(opName);
+			if(controlQubit >= numQubits_ || targetQubit >= numQubits_) {
+				throw std::out_of_range("DenseStateBackend two-qubit operation qubit index out of range");
+			}
+			if(controlQubit == targetQubit) {
+				throw std::invalid_argument("DenseStateBackend two-qubit operation requires distinct qubits");
+			}
+		}
+
+		void validateGateApplicationInputs(const QuantumGate &gate, const QubitList &qubits) const {
+			ensureInitialized("gate application");
+			validateGateTargets("DenseStateBackend::applyGate", qubits, numQubits_, gate.dimension());
+		}
+
+		static unsigned int qubitMask(unsigned int qubit, unsigned int numQubits) {
+			return 1u << (numQubits - qubit - 1u);
 		}
 
 	public:
@@ -39,27 +77,27 @@ class DenseStateBackend : public IStateBackend {
 			amplitudes_.assign(checkedAmplitudeElementCount(numQubits_), 0.0);
 		}
 
-		// Initialize a basis state |initState> with custom complex amplitude.
-		void initBasis(unsigned int numQubits, unsigned int initState, Amplitude amp) override {
+		void initBasis(unsigned int numQubits, StateIndex initState, Amplitude amp) override {
 			initZero(numQubits);
-			if(initState < numStates_) {
-				amplitudes_[2 * initState] = amp.real;
-				amplitudes_[2 * initState + 1] = amp.imag;
+			if(initState >= numStates_) {
+				throw std::out_of_range("DenseStateBackend::initBasis state index out of range");
 			}
+			amplitudes_[2 * initState] = amp.real;
+			amplitudes_[2 * initState + 1] = amp.imag;
 		}
 
-		// Build uniform superposition over an arbitrary subset of basis states.
-		void initUniformSuperposition(unsigned int numQubits, const StatesVector &basisStates) override {
+		void initUniformSuperposition(unsigned int numQubits, const BasisStateList &basisStates) override {
 			numQubits_ = numQubits;
 			numStates_ = checkedStateCount(numQubits_);
 			amplitudes_.assign(checkedAmplitudeElementCount(numQubits_), 0.0);
 
-			StatesVector selected;
+			std::vector<StateIndex> selected;
 			selected.reserve(basisStates.size());
-			for(unsigned int state : basisStates) {
-				if(state < numStates_) {
-					selected.push_back(state);
+			for(StateIndex state : basisStates) {
+				if(state >= numStates_) {
+					throw std::out_of_range("DenseStateBackend::initUniformSuperposition basis state index out of range");
 				}
+				selected.push_back(state);
 			}
 			std::sort(selected.begin(), selected.end());
 			selected.erase(std::unique(selected.begin(), selected.end()), selected.end());
@@ -67,7 +105,7 @@ class DenseStateBackend : public IStateBackend {
 				throw std::invalid_argument("DenseStateBackend: no valid basis states for uniform initialization");
 			}
 
-			const double realAmplitude = 1.0 / std::sqrt((double)selected.size());
+			const double realAmplitude = 1.0 / std::sqrt(static_cast<double>(selected.size()));
 			for(unsigned int state : selected) {
 				amplitudes_[2 * state] = realAmplitude;
 				amplitudes_[2 * state + 1] = 0.0;
@@ -83,27 +121,26 @@ class DenseStateBackend : public IStateBackend {
 			amplitudes_ = std::move(amplitudes);
 		}
 
-		Amplitude amplitude(unsigned int state) const override {
-			Amplitude amp{0.0, 0.0};
-			if(state < numStates_) {
-				amp.real = amplitudes_[state * 2];
-				amp.imag = amplitudes_[state * 2 + 1];
-			}
-			return amp;
+		Amplitude amplitude(StateIndex state) const override {
+			ensureInitialized("amplitude query");
+			validateState(state);
+			return {amplitudes_[state * 2], amplitudes_[state * 2 + 1]};
 		}
 
-		void setAmplitude(unsigned int state, Amplitude amp) override {
+		void setAmplitude(StateIndex state, Amplitude amp) override {
+			ensureInitialized("state update");
 			validateState(state);
 			amplitudes_[state * 2] = amp.real;
 			amplitudes_[state * 2 + 1] = amp.imag;
 		}
 
-		double probability(unsigned int state) const override {
+		double probability(StateIndex state) const override {
 			Amplitude amp = amplitude(state);
 			return amp.real * amp.real + amp.imag * amp.imag;
 		}
 
-		double probabilitySumatory() const override {
+		double totalProbability() const override {
+			ensureInitialized("total probability query");
 			double sum = 0.0;
 			for(unsigned int i = 0; i < numStates_; ++i) {
 				double real = amplitudes_[i * 2];
@@ -113,80 +150,134 @@ class DenseStateBackend : public IStateBackend {
 			return sum;
 		}
 
-		// Applies a k-qubit gate by iterating independent blocks of size 2^k.
-		void applyGate(const QuantumGate &gate, const IntegerVector &qubits, unsigned int numQubits) override {
-			if(qubits.size() > maxSupportedQubitsForU32States()) {
-				return;
+		StateIndex sampleMeasurement(double rnd) const override {
+			ensureInitialized("measurement");
+			if(rnd < 0.0 || rnd >= 1.0) {
+				throw std::invalid_argument("DenseStateBackend::sampleMeasurement requires rnd in [0,1)");
 			}
-			if(gate.dimension != checkedStateCount((unsigned int)qubits.size())) {
-				return;
-			}
-
-			int k = (int)qubits.size();
-			if((unsigned int)k > numQubits) {
-				return;
-			}
-			unsigned int numBlocks = checkedStateCount(numQubits - (unsigned int)k);
-			unsigned int blockSize = checkedStateCount((unsigned int)k);
-
-			std::vector<unsigned int> targetPos((size_t)k);
-			for(int i = 0; i < k; ++i) {
-				targetPos[(size_t)i] = numQubits - qubits[(size_t)i] - 1;
-			}
-
-			std::vector<Amplitude> localAmps(blockSize);
-			std::vector<unsigned int> stateIndices(blockSize);
-
-			for(unsigned int block = 0; block < numBlocks; ++block) {
-				// Reconstruct base state for this block (all non-target qubits fixed).
-				unsigned int baseState = 0;
-				unsigned int tempBlock = block;
-				for(int bit = 0; bit < (int)numQubits; ++bit) {
-					bool isTarget = false;
-					for(int i = 0; i < k; ++i) {
-						if((int)targetPos[(size_t)i] == bit) {
-							isTarget = true;
-							break;
-						}
-					}
-					if(!isTarget) {
-						unsigned int b = tempBlock & 1u;
-						baseState |= (b << bit);
-						tempBlock >>= 1u;
-					}
-				}
-
-				bool hasNonZero = false;
-				for(unsigned int idx = 0; idx < blockSize; ++idx) {
-					unsigned int state = baseState;
-					for(int i = 0; i < k; ++i) {
-						unsigned int bitVal = (idx >> (k - 1 - i)) & 1u;
-						state |= (bitVal << targetPos[(size_t)i]);
-					}
-					stateIndices[idx] = state;
-					localAmps[idx].real = amplitudes_[state * 2];
-					localAmps[idx].imag = amplitudes_[state * 2 + 1];
-					if(localAmps[idx].real != 0.0 || localAmps[idx].imag != 0.0) {
-						hasNonZero = true;
-					}
-				}
-
-				// Skip multiplication if all amplitudes in the block are zero.
-				if(!hasNonZero) continue;
-
-				for(unsigned int row = 0; row < blockSize; ++row) {
-					Amplitude newAmp{0.0, 0.0};
-					for(unsigned int col = 0; col < blockSize; ++col) {
-						Amplitude g = gate[row][col];
-						Amplitude a = localAmps[col];
-						newAmp.real += g.real * a.real - g.imag * a.imag;
-						newAmp.imag += g.real * a.imag + g.imag * a.real;
-					}
-					unsigned int state = stateIndices[row];
-					amplitudes_[state * 2] = newAmp.real;
-					amplitudes_[state * 2 + 1] = newAmp.imag;
+			double cumulative = 0.0;
+			for(StateIndex state = 0; state < numStates_; ++state) {
+				const double real = amplitudes_[state * 2];
+				const double imag = amplitudes_[state * 2 + 1];
+				cumulative += real * real + imag * imag;
+				if(rnd <= cumulative) {
+					return state;
 				}
 			}
+			throw std::runtime_error("DenseStateBackend::sampleMeasurement cumulative probability did not reach sample");
+		}
+
+		void printNonZeroStates(std::ostream &os, double epsilon) const override {
+			ensureInitialized("state printing");
+			if(epsilon < 0.0) {
+				throw std::invalid_argument("DenseStateBackend::printNonZeroStates epsilon must be non-negative");
+			}
+			for(StateIndex state = 0; state < numStates_; ++state) {
+				const double real = amplitudes_[state * 2];
+				const double imag = amplitudes_[state * 2 + 1];
+				if(std::abs(real) > epsilon || std::abs(imag) > epsilon) {
+					os << state << ": " << real << " + " << imag << "i\n";
+				}
+			}
+		}
+
+		void phaseFlipBasisState(StateIndex state) override {
+			validateState(state);
+			amplitudes_[2 * state] = -amplitudes_[2 * state];
+			amplitudes_[2 * state + 1] = -amplitudes_[2 * state + 1];
+		}
+
+		void inversionAboutMean() override {
+			ensureInitialized("inversion about mean");
+			double sumReal = 0.0;
+			double sumImag = 0.0;
+			for(unsigned int state = 0; state < numStates_; ++state) {
+				sumReal += amplitudes_[2 * state];
+				sumImag += amplitudes_[2 * state + 1];
+			}
+			const double meanReal = sumReal / static_cast<double>(numStates_);
+			const double meanImag = sumImag / static_cast<double>(numStates_);
+			for(unsigned int state = 0; state < numStates_; ++state) {
+				double real = amplitudes_[2 * state];
+				double imag = amplitudes_[2 * state + 1];
+				amplitudes_[2 * state] = 2.0 * meanReal - real;
+				amplitudes_[2 * state + 1] = 2.0 * meanImag - imag;
+			}
+		}
+
+		void applyHadamard(QubitIndex qubit) override {
+			validateSingleQubitOperation(qubit, "Hadamard");
+			const unsigned int targetMask = qubitMask(qubit, numQubits_);
+			const double invSqrt2 = 1.0 / std::sqrt(2.0);
+
+			for(unsigned int state = 0; state < numStates_; ++state) {
+				if((state & targetMask) != 0) continue;
+				const unsigned int pairedState = state | targetMask;
+				const double aReal = amplitudes_[2 * state];
+				const double aImag = amplitudes_[2 * state + 1];
+				const double bReal = amplitudes_[2 * pairedState];
+				const double bImag = amplitudes_[2 * pairedState + 1];
+
+				amplitudes_[2 * state] = (aReal + bReal) * invSqrt2;
+				amplitudes_[2 * state + 1] = (aImag + bImag) * invSqrt2;
+				amplitudes_[2 * pairedState] = (aReal - bReal) * invSqrt2;
+				amplitudes_[2 * pairedState + 1] = (aImag - bImag) * invSqrt2;
+			}
+		}
+
+		void applyPauliX(QubitIndex qubit) override {
+			validateSingleQubitOperation(qubit, "PauliX");
+			const unsigned int targetMask = qubitMask(qubit, numQubits_);
+
+			for(unsigned int state = 0; state < numStates_; ++state) {
+				if((state & targetMask) != 0) continue;
+				const unsigned int pairedState = state | targetMask;
+				std::swap(amplitudes_[2 * state], amplitudes_[2 * pairedState]);
+				std::swap(amplitudes_[2 * state + 1], amplitudes_[2 * pairedState + 1]);
+			}
+		}
+
+		void applyControlledPhaseShift(QubitIndex controlQubit, QubitIndex targetQubit, double theta) override {
+			validateTwoQubitOperation(controlQubit, targetQubit, "controlled phase shift");
+			const unsigned int controlMask = qubitMask(controlQubit, numQubits_);
+			const unsigned int targetMask = qubitMask(targetQubit, numQubits_);
+			const double phaseReal = std::cos(theta);
+			const double phaseImag = std::sin(theta);
+
+			for(unsigned int state = 0; state < numStates_; ++state) {
+				if((state & controlMask) == 0 || (state & targetMask) == 0) continue;
+				const double real = amplitudes_[2 * state];
+				const double imag = amplitudes_[2 * state + 1];
+				amplitudes_[2 * state] = phaseReal * real - phaseImag * imag;
+				amplitudes_[2 * state + 1] = phaseReal * imag + phaseImag * real;
+			}
+		}
+
+		void applyControlledNot(QubitIndex controlQubit, QubitIndex targetQubit) override {
+			validateTwoQubitOperation(controlQubit, targetQubit, "controlled not");
+			const unsigned int controlMask = qubitMask(controlQubit, numQubits_);
+			const unsigned int targetMask = qubitMask(targetQubit, numQubits_);
+
+			for(unsigned int state = 0; state < numStates_; ++state) {
+				if((state & controlMask) == 0 || (state & targetMask) != 0) continue;
+				const unsigned int pairedState = state | targetMask;
+				std::swap(amplitudes_[2 * state], amplitudes_[2 * pairedState]);
+				std::swap(amplitudes_[2 * state + 1], amplitudes_[2 * pairedState + 1]);
+			}
+		}
+
+		void applyGate(const QuantumGate &gate, const QubitList &qubits) override {
+			validateGateApplicationInputs(gate, qubits);
+			GateBlockLayout layout = makeGateBlockLayout(qubits, numQubits_);
+
+			auto loadAmplitude = [&](unsigned int state) -> Amplitude {
+				return {amplitudes_[state * 2], amplitudes_[state * 2 + 1]};
+			};
+			auto storeAmplitude = [&](unsigned int state, Amplitude amp) {
+				amplitudes_[state * 2] = amp.real;
+				amplitudes_[state * 2 + 1] = amp.imag;
+			};
+			applyGateByBlocks(gate, layout, loadAmplitude, storeAmplitude, gateWorkspace_);
 		}
 };
 

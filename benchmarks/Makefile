@@ -6,12 +6,20 @@ CXX := g++
 endif
 endif
 
-CXXFLAGS = -std=c++17 -Wall -Wextra
+CXXFLAGS = -std=c++17 -Wall -Wextra -O3
+INCS = -I ../include
+LIBS = -L ../lib64 -l tmfqsfs
+TARGET = ../bin/benchmark_backends
 
-.PHONY: all clean
+.PHONY: all run clean
 
-all:
-	@echo "No benchmark targets are defined yet."
+all: $(TARGET)
+
+run: $(TARGET)
+	LD_LIBRARY_PATH=../lib64:$$LD_LIBRARY_PATH $(TARGET)
+
+$(TARGET): benchmark_backends.cpp
+	$(CXX) $(CXXFLAGS) $(INCS) $< $(LIBS) -o $@
 
 clean:
-	@true
+	rm -f $(TARGET)

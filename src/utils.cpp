@@ -15,6 +15,10 @@ double getRandomNumber() {
 	return uniformRealDistribution(randomNumberEngine);
 }
 
+void setRandomSeed(uint32_t seed) {
+	randomNumberEngine.seed(seed);
+}
+
 // Complex multiplication for custom Amplitude type.
 Amplitude amplitudeMult(Amplitude a, Amplitude b){
 	Amplitude result;

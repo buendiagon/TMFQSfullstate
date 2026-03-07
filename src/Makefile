@@ -19,13 +19,14 @@ LIBS += -lblosc2
 endif
 
 CXXFLAGS += -fPIC -std=c++17 -Wall -Wextra $(INCS)
+CXXFLAGS += $(EXTRA_CXXFLAGS)
 CLEANEXTS = o so
 
 .PHONY: all
 all: $(TARGET_LIB)
 
 $(TARGET_LIB): $(subst .cpp,.o,$(SOURCES))
-	$(CXX) -shared -fPIC $(LDFLAGS) -o $@ $^ $(LIBS)
+	$(CXX) -shared -fPIC $(LDFLAGS) $(EXTRA_LDFLAGS) -o $@ $^ $(LIBS)
 
 %.o: %.cpp
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@

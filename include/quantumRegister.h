@@ -1,6 +1,7 @@
 #ifndef QUANTUM_REGISTER_INCLUDE
 #define QUANTUM_REGISTER_INCLUDE
 
+#include <cstddef>
 #include <iosfwd>
 #include <memory>
 
@@ -11,10 +12,11 @@
 
 // Main user-facing quantum state object.
 // It delegates storage and gate-application details to a runtime-selected backend.
+// Public API contract: invalid inputs throw exceptions instead of silently no-oping.
 class QuantumRegister {
 
 	public:
-		// Empty register (zero qubits, no allocated state).
+		// Valid 0-qubit register initialized to amplitude 1 for the only basis state.
 		QuantumRegister();
 		// Creates |0...0> with the requested backend strategy.
 		explicit QuantumRegister(unsigned int numQubits, const RegisterConfig &cfg = {});
@@ -31,36 +33,41 @@ class QuantumRegister {
 
 		// Register shape.
 		unsigned int qubitCount() const;
-		unsigned int stateCount() const;
-		// Backward-compatible alias for stateCount().
-		int getSize() const;
+		StateIndex stateCount() const;
+		size_t amplitudeElementCount() const;
 
 		// State queries.
-		double probability(unsigned int state) const;
-		double probabilitySumatory() const;
-		Amplitude amplitude(unsigned int state) const;
+		double probability(StateIndex state) const;
+		double totalProbability() const;
+		Amplitude amplitude(StateIndex state) const;
+		StateIndex measure() const;
 
 		// State mutation helpers.
-		void setAmplitude(unsigned int state, Amplitude amp);
+		void setAmplitude(StateIndex state, Amplitude amp);
 		void loadAmplitudes(AmplitudesVector amplitudes);
 		// Initializes selected basis states with equal magnitudes.
-		void initUniformSuperposition(const StatesVector &basisStates);
+		void initUniformSuperposition(const BasisStateList &basisStates);
 
 		// Resolved backend after Auto selection.
 		StorageStrategyKind storageStrategy() const;
 
 		// Debug printing.
-		void printStatesVector() const;
+		void printStatesVector(double epsilon = 1e-12) const;
 		friend std::ostream &operator << (std::ostream &os, const QuantumRegister &reg);
 
 		~QuantumRegister();
 
 		// Gate application APIs.
-		void applyGate(const QuantumGate &g, const IntegerVector &v);
-		void Hadamard(unsigned int qubit);
-		void ControlledPhaseShift(unsigned int controlQubit, unsigned int targetQubit, double theta);
-		void ControlledNot(unsigned int controlQubit, unsigned int targetQubit);
-		void Swap(unsigned int qubit1, unsigned int qubit2);
+		void applyGate(const QuantumGate &g, const QubitList &v);
+		// Flips the phase of one computational basis state |state>.
+		void phaseFlipBasisState(StateIndex state);
+		// Reflection around the global mean amplitude (Grover diffusion step).
+		void inversionAboutMean();
+		void Hadamard(QubitIndex qubit);
+		void PauliX(QubitIndex qubit);
+		void ControlledPhaseShift(QubitIndex controlQubit, QubitIndex targetQubit, double theta);
+		void ControlledNot(QubitIndex controlQubit, QubitIndex targetQubit);
+		void Swap(QubitIndex qubit1, QubitIndex qubit2);
 
 	private:
 		unsigned int numQubits_ = 0;
@@ -71,6 +78,11 @@ class QuantumRegister {
 
 		// Creates and initializes the backend selected by config_.
 		void initializeBackend(unsigned int qubits);
+		// Ensures the register has an initialized backend before operations.
+		void requireInitialized(const char *operation) const;
+		void validateStateIndex(StateIndex state, const char *operation) const;
+		void validateSingleQubit(QubitIndex qubit, const char *operation) const;
+		void validateTwoQubit(QubitIndex q0, QubitIndex q1, const char *operation) const;
 };
 
 #endif //QUANTUM_REGISTER_INCLUDE

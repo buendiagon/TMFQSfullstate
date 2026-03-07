@@ -21,7 +21,7 @@ int main(int argc, char *argv[]){
 			qreg.Hadamard(i);
 		}
 		qreg.printStatesVector();
-		std::cout << qreg.probabilitySumatory() << std::endl;
+			std::cout << qreg.totalProbability() << std::endl;
 
 
 		return 0;

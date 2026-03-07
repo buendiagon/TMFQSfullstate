@@ -5,6 +5,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "stateSpace.h"
@@ -45,18 +46,8 @@ static StateList sanitizeStates(const StateList &input, unsigned int totalStates
 
 // Sample one basis state according to current probability distribution.
 static unsigned int measureState(QuantumRegister &qureg, unsigned int totalStates) {
-	double randomValue = getRandomNumber();
-	double cumulativeProbability = 0.0;
-	unsigned int measuredState = totalStates - 1;
-
-	for (unsigned int basisState = 0; basisState < totalStates; ++basisState) {
-		cumulativeProbability += qureg.probability(basisState);
-		if (randomValue <= cumulativeProbability) {
-			measuredState = basisState;
-			break;
-		}
-	}
-	return measuredState;
+	(void)totalStates;
+	return qureg.measure();
 }
 
 // Demo input set used by this qftG variant (all even basis states).
@@ -71,7 +62,7 @@ static StateList chooseInputStates(unsigned int totalStates) {
 }
 
 static void printUsage() {
-	cout << "Usage: ./qftG <num_qubits> [--strategy dense|blosc|auto] [--chunk-states N] [--clevel N] [--nthreads N] [--threshold-mb N]" << endl;
+	cout << "Usage: ./qftG <num_qubits> [--strategy dense|blosc|auto] [--chunk-states N] [--cache-slots N] [--clevel N] [--nthreads N] [--threshold-mb N]" << endl;
 }
 
 // Runtime strategy parser for --strategy option.
@@ -121,6 +112,19 @@ static bool parseArgs(int argc, char *argv[], CliOptions &optionsOut) {
 			optionsOut.registerConfig.blosc.chunkStates = value;
 			continue;
 		}
+		if(arg == "--cache-slots") {
+			if(i + 1 >= argc) {
+				cout << "Missing value for --cache-slots" << endl;
+				return false;
+			}
+			unsigned int value = 0;
+			if(!parseUnsigned(argv[++i], value) || value == 0) {
+				cout << "Invalid --cache-slots value" << endl;
+				return false;
+			}
+			optionsOut.registerConfig.blosc.gateCacheSlots = value;
+			continue;
+		}
 		if(arg == "--clevel") {
 			if(i + 1 >= argc) {
 				cout << "Missing value for --clevel" << endl;
@@ -131,7 +135,7 @@ static bool parseArgs(int argc, char *argv[], CliOptions &optionsOut) {
 				cout << "Invalid --clevel value" << endl;
 				return false;
 			}
-			optionsOut.registerConfig.blosc.clevel = (int)value;
+			optionsOut.registerConfig.blosc.clevel = static_cast<int>(value);
 			continue;
 		}
 		if(arg == "--nthreads") {
@@ -144,7 +148,7 @@ static bool parseArgs(int argc, char *argv[], CliOptions &optionsOut) {
 				cout << "Invalid --nthreads value" << endl;
 				return false;
 			}
-			optionsOut.registerConfig.blosc.nthreads = (int)value;
+			optionsOut.registerConfig.blosc.nthreads = static_cast<int>(value);
 			continue;
 		}
 		if(arg == "--threshold-mb") {
@@ -157,7 +161,7 @@ static bool parseArgs(int argc, char *argv[], CliOptions &optionsOut) {
 				cout << "Invalid --threshold-mb value" << endl;
 				return false;
 			}
-			optionsOut.registerConfig.autoThresholdBytes = (size_t)value * 1024u * 1024u;
+			optionsOut.registerConfig.autoThresholdBytes = static_cast<size_t>(value) * 1024u * 1024u;
 			continue;
 		}
 
@@ -203,8 +207,8 @@ int main(int argc, char *argv[]) {
 			return 1;
 		}
 
-		QuantumRegister qureg(options.qubitCount, options.registerConfig);
-		qureg.initUniformSuperposition(selectedStates);
+			QuantumRegister qureg(options.qubitCount, options.registerConfig);
+			qureg.initUniformSuperposition(BasisStateList(std::move(selectedStates)));
 
 		// Core algorithm execution is backend-agnostic; storage strategy is runtime-selected.
 		quantumFourierTransform(qureg);

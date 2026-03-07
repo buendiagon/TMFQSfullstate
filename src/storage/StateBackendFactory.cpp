@@ -2,6 +2,7 @@
 #include "stateSpace.h"
 
 #include <stdexcept>
+#include <utility>
 
 std::unique_ptr<IStateBackend> createDenseBackend(unsigned int numQubits, const RegisterConfig &cfg);
 std::unique_ptr<IStateBackend> createBloscBackend(unsigned int numQubits, const RegisterConfig &cfg);
@@ -41,8 +42,7 @@ std::vector<std::string> listAvailableStrategies() {
 	return out;
 }
 
-// Central strategy selection and backend construction entry point.
-std::unique_ptr<IStateBackend> createBackend(unsigned int numQubits, const RegisterConfig &cfg) {
+StorageStrategyKind resolveStorageStrategy(unsigned int numQubits, const RegisterConfig &cfg) {
 	StorageStrategyKind selected = cfg.strategy;
 	if(selected == StorageStrategyKind::Auto) {
 		size_t estimatedBytes = checkedAmplitudeElementCount(numQubits) * sizeof(double);
@@ -52,9 +52,22 @@ std::unique_ptr<IStateBackend> createBackend(unsigned int numQubits, const Regis
 			selected = StorageStrategyKind::Dense;
 		}
 	}
+	return selected;
+}
+
+// Central strategy selection and backend construction entry point.
+std::unique_ptr<IStateBackend> createBackend(unsigned int numQubits, const RegisterConfig &cfg) {
+	return createBackendSelection(numQubits, cfg).backend;
+}
+
+BackendSelection createBackendSelection(unsigned int numQubits, const RegisterConfig &cfg) {
+	StorageStrategyKind selected = resolveStorageStrategy(numQubits, cfg);
+	BackendSelection selection;
+	selection.strategy = selected;
 
 	if(selected == StorageStrategyKind::Dense) {
-		return createDenseBackend(numQubits, cfg);
+		selection.backend = createDenseBackend(numQubits, cfg);
+		return selection;
 	}
 
 	if(selected == StorageStrategyKind::Blosc) {
@@ -62,7 +75,8 @@ std::unique_ptr<IStateBackend> createBackend(unsigned int numQubits, const Regis
 		if(!backend) {
 			throw std::runtime_error("Blosc backend requested but unavailable in this build");
 		}
-		return backend;
+		selection.backend = std::move(backend);
+		return selection;
 	}
 
 	throw std::runtime_error("Unsupported storage strategy requested");

@@ -7,7 +7,16 @@
 #include "types.h"
 #include "storage/IStateBackend.h"
 
-// Builds a backend according to RegisterConfig and initializes it for numQubits.
+struct BackendSelection {
+	StorageStrategyKind strategy = StorageStrategyKind::Dense;
+	std::unique_ptr<IStateBackend> backend;
+};
+
+// Resolves Auto strategy to a concrete backend kind for the given register size.
+StorageStrategyKind resolveStorageStrategy(unsigned int numQubits, const RegisterConfig &cfg);
+// Resolves strategy and returns both the concrete strategy and backend instance.
+BackendSelection createBackendSelection(unsigned int numQubits, const RegisterConfig &cfg);
+// Builds a backend according to RegisterConfig (backend object is not state-initialized).
 std::unique_ptr<IStateBackend> createBackend(unsigned int numQubits, const RegisterConfig &cfg);
 // Returns true when the requested strategy is compiled/registered in this build.
 bool isStrategyAvailable(StorageStrategyKind kind);
