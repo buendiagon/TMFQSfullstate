@@ -1,24 +1,24 @@
-#include "quantumRegister.h"
-#include "stateSpace.h"
-#include "utils.h"
-#include "validation.h"
+#include "tmfqs/register/quantum_register.h"
 
 #include <iostream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 
+#include "tmfqs/core/random.h"
+#include "tmfqs/core/state_space.h"
+#include "tmfqs/core/validation.h"
+
+namespace tmfqs {
 namespace {
 constexpr double kDefaultPrintEpsilon = 1e-12;
 }
 
-// QuantumRegister is a facade: all storage-specific behavior lives in the selected backend.
 QuantumRegister::QuantumRegister() {
 	initializeBackend(0);
 	backend_->initBasis(numQubits_, 0, {1.0, 0.0});
 }
 
-// Create backend and resolve strategy (including Auto mode) from configuration.
 void QuantumRegister::initializeBackend(unsigned int qubits) {
 	numQubits_ = qubits;
 	numStates_ = checkedStateCount(numQubits_);
@@ -71,6 +71,8 @@ QuantumRegister& QuantumRegister::operator=(const QuantumRegister &other) {
 	return *this;
 }
 
+QuantumRegister::~QuantumRegister() = default;
+
 void QuantumRegister::requireInitialized(const char *operation) const {
 	if(!backend_) {
 		throw std::logic_error(std::string("QuantumRegister is not initialized for ") + operation);
@@ -89,35 +91,15 @@ size_t QuantumRegister::amplitudeElementCount() const {
 	return static_cast<size_t>(numStates_) * 2u;
 }
 
-void QuantumRegister::validateStateIndex(StateIndex state, const char *operation) const {
-	if(state >= numStates_) {
-		throw std::out_of_range(std::string("QuantumRegister::") + operation + " state index out of range");
-	}
-}
-
-void QuantumRegister::validateSingleQubit(QubitIndex qubit, const char *operation) const {
-	if(qubit >= numQubits_) {
-		throw std::out_of_range(std::string("QuantumRegister::") + operation + " qubit index out of range");
-	}
-}
-
-void QuantumRegister::validateTwoQubit(QubitIndex q0, QubitIndex q1, const char *operation) const {
-	validateSingleQubit(q0, operation);
-	validateSingleQubit(q1, operation);
-	if(q0 == q1) {
-		throw std::invalid_argument(std::string("QuantumRegister::") + operation + " requires distinct qubits");
-	}
-}
-
 Amplitude QuantumRegister::amplitude(StateIndex state) const {
 	requireInitialized("amplitude query");
-	validateStateIndex(state, "amplitude");
+	validateStateIndex("QuantumRegister::amplitude", state, numStates_);
 	return backend_->amplitude(state);
 }
 
 double QuantumRegister::probability(StateIndex state) const {
 	requireInitialized("probability query");
-	validateStateIndex(state, "probability");
+	validateStateIndex("QuantumRegister::probability", state, numStates_);
 	return backend_->probability(state);
 }
 
@@ -126,14 +108,14 @@ double QuantumRegister::totalProbability() const {
 	return backend_->totalProbability();
 }
 
-StateIndex QuantumRegister::measure() const {
+StateIndex QuantumRegister::measure(IRandomSource &randomSource) const {
 	requireInitialized("measurement");
-	return backend_->sampleMeasurement(getRandomNumber());
+	return backend_->sampleMeasurement(randomSource.nextUnitDouble());
 }
 
 void QuantumRegister::setAmplitude(StateIndex state, Amplitude amp) {
 	requireInitialized("state update");
-	validateStateIndex(state, "setAmplitude");
+	validateStateIndex("QuantumRegister::setAmplitude", state, numStates_);
 	backend_->setAmplitude(state, amp);
 }
 
@@ -142,16 +124,13 @@ void QuantumRegister::loadAmplitudes(AmplitudesVector amplitudes) {
 	backend_->loadAmplitudes(numQubits_, std::move(amplitudes));
 }
 
-// Initialize equal amplitudes on the provided basis states (sparse input).
 void QuantumRegister::initUniformSuperposition(const BasisStateList &basisStates) {
 	requireInitialized("uniform superposition initialization");
 	if(basisStates.empty()) {
 		throw std::invalid_argument("QuantumRegister::initUniformSuperposition requires at least one basis state");
 	}
 	for(StateIndex state : basisStates) {
-		if(state >= numStates_) {
-			throw std::out_of_range("QuantumRegister::initUniformSuperposition basis state index out of range");
-		}
+		validateStateIndex("QuantumRegister::initUniformSuperposition", state, numStates_);
 	}
 	backend_->initUniformSuperposition(numQubits_, basisStates);
 }
@@ -160,7 +139,7 @@ StorageStrategyKind QuantumRegister::storageStrategy() const {
 	return resolvedStrategy_;
 }
 
-std::ostream &operator << (std::ostream &os, const QuantumRegister &reg) {
+std::ostream &operator<<(std::ostream &os, const QuantumRegister &reg) {
 	reg.requireInitialized("state printing");
 	reg.backend_->printNonZeroStates(os, kDefaultPrintEpsilon);
 	return os;
@@ -174,55 +153,59 @@ void QuantumRegister::printStatesVector(double epsilon) const {
 	backend_->printNonZeroStates(std::cout, epsilon);
 }
 
-QuantumRegister::~QuantumRegister() = default;
-
-// Apply an arbitrary k-qubit gate on the selected qubit indices.
-void QuantumRegister::applyGate(const QuantumGate &gate, const QubitList &qubits){
+void QuantumRegister::applyGate(const QuantumGate &gate, const QubitList &qubits) {
 	requireInitialized("gate application");
 	validateGateTargets("QuantumRegister::applyGate", qubits, numQubits_, gate.dimension());
 	backend_->applyGate(gate, qubits);
 }
 
-void QuantumRegister::phaseFlipBasisState(StateIndex state) {
+void QuantumRegister::applyPhaseFlipBasisState(StateIndex state) {
 	requireInitialized("basis-state phase flip");
-	validateStateIndex(state, "phaseFlipBasisState");
+	validateStateIndex("QuantumRegister::applyPhaseFlipBasisState", state, numStates_);
 	backend_->phaseFlipBasisState(state);
 }
 
-void QuantumRegister::inversionAboutMean() {
+void QuantumRegister::applyInversionAboutMean() {
 	requireInitialized("inversion about mean");
 	backend_->inversionAboutMean();
 }
 
-void QuantumRegister::Hadamard(QubitIndex qubit){
+void QuantumRegister::applyHadamard(QubitIndex qubit) {
 	requireInitialized("Hadamard");
-	validateSingleQubit(qubit, "Hadamard");
+	validateQubitIndex("QuantumRegister::applyHadamard", qubit, numQubits_);
 	backend_->applyHadamard(qubit);
 }
 
-void QuantumRegister::PauliX(QubitIndex qubit) {
+void QuantumRegister::applyPauliX(QubitIndex qubit) {
 	requireInitialized("PauliX");
-	validateSingleQubit(qubit, "PauliX");
+	validateQubitIndex("QuantumRegister::applyPauliX", qubit, numQubits_);
 	backend_->applyPauliX(qubit);
 }
 
-void QuantumRegister::ControlledPhaseShift(QubitIndex controlQubit, QubitIndex targetQubit, double theta){
+void QuantumRegister::applyControlledPhaseShift(QubitIndex controlQubit, QubitIndex targetQubit, double theta) {
 	requireInitialized("controlled phase shift");
-	validateTwoQubit(controlQubit, targetQubit, "ControlledPhaseShift");
+	validateQubitIndex("QuantumRegister::applyControlledPhaseShift", controlQubit, numQubits_);
+	validateQubitIndex("QuantumRegister::applyControlledPhaseShift", targetQubit, numQubits_);
+	validateDistinctQubits("QuantumRegister::applyControlledPhaseShift", controlQubit, targetQubit);
 	backend_->applyControlledPhaseShift(controlQubit, targetQubit, theta);
 }
 
-void QuantumRegister::ControlledNot(QubitIndex controlQubit, QubitIndex targetQubit) {
+void QuantumRegister::applyControlledNot(QubitIndex controlQubit, QubitIndex targetQubit) {
 	requireInitialized("controlled not");
-	validateTwoQubit(controlQubit, targetQubit, "ControlledNot");
+	validateQubitIndex("QuantumRegister::applyControlledNot", controlQubit, numQubits_);
+	validateQubitIndex("QuantumRegister::applyControlledNot", targetQubit, numQubits_);
+	validateDistinctQubits("QuantumRegister::applyControlledNot", controlQubit, targetQubit);
 	backend_->applyControlledNot(controlQubit, targetQubit);
 }
 
-// SWAP decomposition in terms of three CNOT operations.
-void QuantumRegister::Swap(QubitIndex qubit1, QubitIndex qubit2) {
+void QuantumRegister::applySwap(QubitIndex qubit1, QubitIndex qubit2) {
 	requireInitialized("swap");
-	validateTwoQubit(qubit1, qubit2, "Swap");
-	ControlledNot(qubit1, qubit2);
-	ControlledNot(qubit2, qubit1);
-	ControlledNot(qubit1, qubit2);
+	validateQubitIndex("QuantumRegister::applySwap", qubit1, numQubits_);
+	validateQubitIndex("QuantumRegister::applySwap", qubit2, numQubits_);
+	validateDistinctQubits("QuantumRegister::applySwap", qubit1, qubit2);
+	applyControlledNot(qubit1, qubit2);
+	applyControlledNot(qubit2, qubit1);
+	applyControlledNot(qubit1, qubit2);
 }
+
+} // namespace tmfqs

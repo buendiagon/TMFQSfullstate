@@ -1,22 +1,20 @@
-#ifndef QUANTUM_GATE_INCLUDE
-#define QUANTUM_GATE_INCLUDE
+#ifndef TMFQS_GATES_QUANTUM_GATE_H
+#define TMFQS_GATES_QUANTUM_GATE_H
 
 #include <iosfwd>
 #include <vector>
 
-#include "types.h"
+#include "tmfqs/core/types.h"
 
-// Dense matrix representation of a quantum gate.
-// Matrix entries are stored in row-major order.
+namespace tmfqs {
+
 class QuantumGate {
-
 	private:
 		std::vector<Amplitude> matrix_;
 		unsigned int dimension_ = 0;
 
 	public:
 		QuantumGate() = default;
-		// Builds an empty square gate matrix of size dimension x dimension.
 		explicit QuantumGate(unsigned int dimension);
 		QuantumGate(const QuantumGate&) = default;
 		QuantumGate(QuantumGate&&) noexcept = default;
@@ -24,21 +22,16 @@ class QuantumGate {
 		QuantumGate& operator=(QuantumGate&&) noexcept = default;
 		~QuantumGate() = default;
 
-		// Row access helper so callers can use gate[i][j] style indexing.
-		Amplitude * operator[](unsigned int i);
-		const Amplitude * operator[](unsigned int i) const;
-		// Matrix dimension (e.g., 2 for single-qubit, 4 for two-qubit gates).
+		Amplitude *operator[](unsigned int i);
+		const Amplitude *operator[](unsigned int i) const;
 		unsigned int dimension() const noexcept;
 
-		// Scalar and matrix multiplication.
 		QuantumGate operator*(Amplitude x) const;
 		QuantumGate operator*(const QuantumGate &qg) const;
 
-		// Human-readable printing utilities.
 		void printQuantumGate() const;
 		friend std::ostream &operator<<(std::ostream &os, const QuantumGate &qg);
 
-		// Standard gates and gate builders.
 		static QuantumGate Identity(unsigned int dimension);
 		static QuantumGate Hadamard();
 		static QuantumGate PauliX();
@@ -51,12 +44,12 @@ class QuantumGate {
 		static QuantumGate ControlledPhaseShift(double theta);
 		static QuantumGate Swap();
 		static QuantumGate Ising(double theta);
-		// Full n-qubit Fourier transform matrices.
-		static QuantumGate QFT(unsigned int num_qubits);
-		static QuantumGate IQFT(unsigned int num_qubits);
+		static QuantumGate QFT(unsigned int numQubits);
+		static QuantumGate IQFT(unsigned int numQubits);
 };
 
-// For left multiplication.
 QuantumGate operator*(Amplitude x, const QuantumGate &U);
 
-#endif // QUANTUM_GATE_INCLUDE
+} // namespace tmfqs
+
+#endif // TMFQS_GATES_QUANTUM_GATE_H

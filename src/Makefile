@@ -6,8 +6,16 @@ CXX := g++
 endif
 endif
 
-SOURCES = quantumRegister.cpp quantumGate.cpp quantumAlgorithms.cpp utils.cpp \
-          storage/StateBackendFactory.cpp storage/DenseStateBackend.cpp storage/BloscStateBackend.cpp
+SOURCES = tmfqs/register/quantum_register.cpp \
+          tmfqs/gates/quantum_gate.cpp \
+          tmfqs/core/math.cpp \
+          tmfqs/core/random.cpp \
+          tmfqs/algorithms/operations.cpp \
+          tmfqs/algorithms/qft.cpp \
+          tmfqs/algorithms/grover.cpp \
+          tmfqs/storage/StateBackendFactory.cpp \
+          tmfqs/storage/DenseStateBackend.cpp \
+          tmfqs/storage/BloscStateBackend.cpp
 TARGET_LIB = libtmfqsfs.so
 INSTALLDIR = ../lib64
 INCS = -I ./ -I ../include
@@ -39,7 +47,7 @@ install:
 .PHONY: clean
 clean:
 	for file in $(CLEANEXTS); do rm -f *.$$file; done
-	rm -f storage/*.o storage/*.d
+	rm -f tmfqs/*/*.o tmfqs/*/*.d
 
 include $(subst .cpp,.d,$(SOURCES))
 

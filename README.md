@@ -193,6 +193,7 @@ Output files:
 
 ```cpp
 #include "tmfqsfs.h"
+using namespace tmfqs;
 
 // Create a register with n qubits (initialized to |0⟩)
 QuantumRegister qreg(n);
@@ -208,16 +209,17 @@ cfg.blosc.gateCacheSlots = 8;
 QuantumRegister qreg_compressed(n, cfg);
 
 // Apply quantum gates
-qreg.Hadamard(qubit);
-qreg.ControlledNot(control, target);
-qreg.ControlledPhaseShift(control, target, theta);
-qreg.Swap(qubit1, qubit2);
+qreg.applyHadamard(qubit);
+qreg.applyControlledNot(control, target);
+qreg.applyControlledPhaseShift(control, target, theta);
+qreg.applySwap(qubit1, qubit2);
 
 // Query state
 Amplitude amp = qreg.amplitude(state);
 double prob = qreg.probability(state);
 double total = qreg.totalProbability();  // Should equal 1.0
-unsigned int sampled = qreg.measure();
+Mt19937RandomSource rng;
+unsigned int sampled = qreg.measure(rng);
 size_t elemCount = qreg.amplitudeElementCount();
 
 // Display
@@ -247,13 +249,16 @@ qreg.applyGate(gate, qubits);
 
 ```cpp
 #include "tmfqsfs.h"
+using namespace tmfqs;
 
 // Quantum Fourier Transform
 QuantumRegister qreg(n, initial_state);
-quantumFourierTransform(qreg);
+algorithms::qftInPlace(qreg);
 
 // Grover's Search (returns measured state)
-unsigned int result = Grover(marked_state, num_qubits, verbose);
+algorithms::GroverConfig cfg{marked_state, num_qubits, verbose};
+Mt19937RandomSource rng(12345u);
+unsigned int result = algorithms::groverSearch(cfg, rng);
 ```
 
 ---
@@ -267,14 +272,15 @@ unsigned int result = Grover(marked_state, num_qubits, verbose);
 #include <iostream>
 
 int main() {
+    using namespace tmfqs;
     // Create |00⟩
     QuantumRegister qreg(2, 0);
     
     // Apply H to qubit 0: (|0⟩ + |1⟩)/√2 ⊗ |0⟩
-    qreg.Hadamard(0);
+    qreg.applyHadamard(0);
     
     // Apply CNOT: (|00⟩ + |11⟩)/√2
-    qreg.ControlledNot(0, 1);
+    qreg.applyControlledNot(0, 1);
     
     std::cout << "Bell State |Φ+⟩:" << std::endl;
     qreg.printStatesVector();
@@ -290,10 +296,13 @@ int main() {
 #include <iostream>
 
 int main() {
+    using namespace tmfqs;
     unsigned int target = 5;   // State to find
     unsigned int qubits = 3;   // 2^3 = 8 possible states
+    algorithms::GroverConfig cfg{target, qubits, true};
+    Mt19937RandomSource rng;
     
-    unsigned int result = Grover(target, qubits, true);
+    unsigned int result = algorithms::groverSearch(cfg, rng);
     
     std::cout << "Found: " << result << std::endl;
     std::cout << "Expected: " << target << std::endl;
@@ -319,26 +328,21 @@ export LD_LIBRARY_PATH="/path/to/QSTest/lib64:$LD_LIBRARY_PATH"
 
 ```
 QSTest/
-├── include/                  # Header files
-│   ├── tmfqsfs.h            # Main include (includes all headers)
-│   ├── stateSpace.h         # Checked qubit/state-size helpers
-│   ├── quantumRegister.h    # Quantum register class
-│   ├── quantumGate.h        # Quantum gate class
-│   ├── quantumAlgorithms.h  # QFT, Grover, etc.
-│   ├── types.h              # Type definitions (Amplitude, vectors)
-│   ├── utils.h              # Utility functions
-│   └── storage/
-│       ├── IStateBackend.h
-│       └── StateBackendFactory.h
-├── src/                      # Source files
-│   ├── quantumRegister.cpp
-│   ├── quantumGate.cpp
-│   ├── quantumAlgorithms.cpp
-│   ├── utils.cpp
-│   ├── storage/              # Runtime backend strategies
-│   │   ├── DenseStateBackend.cpp
-│   │   ├── BloscStateBackend.cpp
-│   │   └── StateBackendFactory.cpp
+├── include/
+│   ├── tmfqsfs.h             # Umbrella public header
+│   └── tmfqs/
+│       ├── algorithms/       # qftInPlace, groverSearch, operation model
+│       ├── core/             # Types, constants, random, math, validation
+│       ├── gates/            # QuantumGate
+│       ├── register/         # QuantumRegister facade
+│       └── storage/          # Backend interfaces and factory
+├── src/
+│   ├── tmfqs/
+│   │   ├── algorithms/
+│   │   ├── core/
+│   │   ├── gates/
+│   │   ├── register/
+│   │   └── storage/
 │   └── Makefile
 ├── examples/                 # Example programs
 │   ├── qft.cpp
@@ -348,7 +352,6 @@ QSTest/
 ├── tests/
 │   └── integration/
 │       └── test_bugfixes.cpp
-├── benchmarks/               # Reserved for future benchmark targets
 ├── bin/                      # Compiled binaries
 ├── lib64/                    # Shared library
 │   └── libtmfqsfs.so

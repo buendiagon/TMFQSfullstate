@@ -1,12 +1,14 @@
-#ifndef STORAGE_GATE_BLOCK_APPLY_INCLUDE
-#define STORAGE_GATE_BLOCK_APPLY_INCLUDE
+#ifndef TMFQS_STORAGE_GATE_BLOCK_APPLY_H
+#define TMFQS_STORAGE_GATE_BLOCK_APPLY_H
 
 #include <cstddef>
 #include <vector>
 
-#include "quantumGate.h"
-#include "stateSpace.h"
-#include "types.h"
+#include "tmfqs/core/state_space.h"
+#include "tmfqs/core/types.h"
+#include "tmfqs/gates/quantum_gate.h"
+
+namespace tmfqs {
 
 struct GateBlockLayout {
 	unsigned int numQubits = 0;
@@ -14,7 +16,9 @@ struct GateBlockLayout {
 	unsigned int numBlocks = 0;
 	unsigned int blockSize = 0;
 	std::vector<unsigned int> targetPositions;
-	std::vector<bool> isTargetBit;
+	std::vector<unsigned int> targetMasks;
+	std::vector<unsigned int> nonTargetPositions;
+	std::vector<unsigned int> blockOffsets;
 };
 
 struct GateBlockWorkspace {
@@ -33,6 +37,14 @@ struct GateBlockWorkspace {
 	}
 };
 
+inline unsigned int composeBaseStateFromBlock(unsigned int block, const std::vector<unsigned int> &nonTargetPositions) {
+	unsigned int baseState = 0;
+	for(size_t idx = 0; idx < nonTargetPositions.size(); ++idx) {
+		baseState |= ((block >> static_cast<unsigned int>(idx)) & 1u) << nonTargetPositions[idx];
+	}
+	return baseState;
+}
+
 inline GateBlockLayout makeGateBlockLayout(const QubitList &qubits, unsigned int numQubits) {
 	GateBlockLayout layout;
 	layout.numQubits = numQubits;
@@ -40,12 +52,31 @@ inline GateBlockLayout makeGateBlockLayout(const QubitList &qubits, unsigned int
 	layout.numBlocks = checkedStateCount(numQubits - layout.activeQubits);
 	layout.blockSize = checkedStateCount(layout.activeQubits);
 	layout.targetPositions.resize(layout.activeQubits);
-	layout.isTargetBit.assign(numQubits, false);
+	layout.targetMasks.resize(layout.activeQubits);
+	layout.nonTargetPositions.reserve(numQubits - layout.activeQubits);
+	layout.blockOffsets.resize(layout.blockSize, 0u);
 
+	std::vector<bool> isTargetBit(numQubits, false);
 	for(unsigned int idx = 0; idx < layout.activeQubits; ++idx) {
-		unsigned int targetBit = numQubits - qubits[idx] - 1u;
+		const unsigned int targetBit = numQubits - qubits[idx] - 1u;
 		layout.targetPositions[idx] = targetBit;
-		layout.isTargetBit[targetBit] = true;
+		layout.targetMasks[idx] = 1u << targetBit;
+		isTargetBit[targetBit] = true;
+	}
+	for(unsigned int bit = 0; bit < numQubits; ++bit) {
+		if(!isTargetBit[bit]) {
+			layout.nonTargetPositions.push_back(bit);
+		}
+	}
+	for(unsigned int idx = 0; idx < layout.blockSize; ++idx) {
+		unsigned int offset = 0;
+		for(unsigned int bit = 0; bit < layout.activeQubits; ++bit) {
+			const unsigned int bitVal = (idx >> (layout.activeQubits - bit - 1u)) & 1u;
+			if(bitVal != 0u) {
+				offset |= layout.targetMasks[bit];
+			}
+		}
+		layout.blockOffsets[idx] = offset;
 	}
 
 	return layout;
@@ -58,7 +89,6 @@ inline void applyGateByBlocks(
 	LoadAmplitudeFn loadAmplitude,
 	StoreAmplitudeFn storeAmplitude,
 	GateBlockWorkspace &workspace) {
-	const int k = static_cast<int>(layout.activeQubits);
 	workspace.ensure(layout.blockSize);
 	std::vector<Amplitude> &localAmps = workspace.localAmps;
 	std::vector<StateIndex> &stateIndices = workspace.stateIndices;
@@ -68,17 +98,11 @@ inline void applyGateByBlocks(
 	const std::vector<const Amplitude *> &gateRows = workspace.gateRows;
 
 	if(layout.activeQubits == 1u) {
-		const unsigned int q0Mask = 1u << layout.targetPositions[0];
+		const unsigned int q0Mask = layout.targetMasks[0];
 		const Amplitude *row0 = gateRows[0];
 		const Amplitude *row1 = gateRows[1];
 		for(unsigned int block = 0; block < layout.numBlocks; ++block) {
-			unsigned int baseState = 0;
-			unsigned int tempBlock = block;
-			for(unsigned int bit = 0; bit < layout.numQubits; ++bit) {
-				if(layout.isTargetBit[bit]) continue;
-				baseState |= (tempBlock & 1u) << bit;
-				tempBlock >>= 1u;
-			}
+			const unsigned int baseState = composeBaseStateFromBlock(block, layout.nonTargetPositions);
 			const StateIndex state0 = baseState;
 			const StateIndex state1 = baseState | q0Mask;
 			const Amplitude a0 = loadAmplitude(state0);
@@ -102,16 +126,10 @@ inline void applyGateByBlocks(
 	}
 
 	if(layout.activeQubits == 2u) {
-		const unsigned int q0Mask = 1u << layout.targetPositions[0];
-		const unsigned int q1Mask = 1u << layout.targetPositions[1];
+		const unsigned int q0Mask = layout.targetMasks[0];
+		const unsigned int q1Mask = layout.targetMasks[1];
 		for(unsigned int block = 0; block < layout.numBlocks; ++block) {
-			unsigned int baseState = 0;
-			unsigned int tempBlock = block;
-			for(unsigned int bit = 0; bit < layout.numQubits; ++bit) {
-				if(layout.isTargetBit[bit]) continue;
-				baseState |= (tempBlock & 1u) << bit;
-				tempBlock >>= 1u;
-			}
+			const unsigned int baseState = composeBaseStateFromBlock(block, layout.nonTargetPositions);
 
 			const StateIndex state00 = baseState;
 			const StateIndex state01 = baseState | q1Mask;
@@ -148,21 +166,11 @@ inline void applyGateByBlocks(
 	}
 
 	for(unsigned int block = 0; block < layout.numBlocks; ++block) {
-		unsigned int baseState = 0;
-		unsigned int tempBlock = block;
-		for(unsigned int bit = 0; bit < layout.numQubits; ++bit) {
-			if(layout.isTargetBit[bit]) continue;
-			baseState |= (tempBlock & 1u) << bit;
-			tempBlock >>= 1u;
-		}
+		const unsigned int baseState = composeBaseStateFromBlock(block, layout.nonTargetPositions);
 
 		bool hasNonZero = false;
 		for(unsigned int idx = 0; idx < layout.blockSize; ++idx) {
-			unsigned int state = baseState;
-			for(int i = 0; i < k; ++i) {
-				unsigned int bitVal = (idx >> (k - 1 - i)) & 1u;
-				state |= bitVal << layout.targetPositions[static_cast<size_t>(i)];
-			}
+			const unsigned int state = baseState | layout.blockOffsets[idx];
 			stateIndices[idx] = state;
 			localAmps[idx] = loadAmplitude(state);
 			if(localAmps[idx].real != 0.0 || localAmps[idx].imag != 0.0) {
@@ -176,8 +184,8 @@ inline void applyGateByBlocks(
 			Amplitude newAmp{0.0, 0.0};
 			const Amplitude *gRow = gateRows[row];
 			for(unsigned int col = 0; col < layout.blockSize; ++col) {
-				Amplitude g = gRow[col];
-				Amplitude a = localAmps[col];
+				const Amplitude g = gRow[col];
+				const Amplitude a = localAmps[col];
 				newAmp.real += g.real * a.real - g.imag * a.imag;
 				newAmp.imag += g.real * a.imag + g.imag * a.real;
 			}
@@ -186,4 +194,6 @@ inline void applyGateByBlocks(
 	}
 }
 
-#endif // STORAGE_GATE_BLOCK_APPLY_INCLUDE
+} // namespace tmfqs
+
+#endif // TMFQS_STORAGE_GATE_BLOCK_APPLY_H

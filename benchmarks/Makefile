@@ -6,20 +6,19 @@ CXX := g++
 endif
 endif
 
-CXXFLAGS = -std=c++17 -Wall -Wextra -O3
+CXXFLAGS = -std=c++17 -O3 -DNDEBUG -Wall -Wextra
 INCS = -I ../include
 LIBS = -L ../lib64 -l tmfqsfs
-TARGET = ../bin/benchmark_backends
 
 .PHONY: all run clean
 
-all: $(TARGET)
+all: ../bin/benchmark_backends
 
-run: $(TARGET)
-	LD_LIBRARY_PATH=../lib64:$$LD_LIBRARY_PATH $(TARGET)
+run: all
+	LD_LIBRARY_PATH=../lib64:$$LD_LIBRARY_PATH ../bin/benchmark_backends
 
-$(TARGET): benchmark_backends.cpp
+../bin/benchmark_backends: benchmark_backends.cpp
 	$(CXX) $(CXXFLAGS) $(INCS) $< $(LIBS) -o $@
 
 clean:
-	rm -f $(TARGET)
+	rm -f ../bin/benchmark_backends
