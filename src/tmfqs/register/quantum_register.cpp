@@ -208,4 +208,14 @@ void QuantumRegister::applySwap(QubitIndex qubit1, QubitIndex qubit2) {
 	applyControlledNot(qubit1, qubit2);
 }
 
+void QuantumRegister::beginOperationBatch() {
+	requireInitialized("operation batch begin");
+	backend_->beginOperationBatch();
+}
+
+void QuantumRegister::endOperationBatch() {
+	requireInitialized("operation batch end");
+	backend_->endOperationBatch();
+}
+
 } // namespace tmfqs

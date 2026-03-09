@@ -5,6 +5,27 @@
 
 namespace tmfqs {
 namespace algorithms {
+namespace {
+
+template <typename ExecuteFn>
+void runWithOperationBatch(QuantumRegister &quantumRegister, ExecuteFn &&executeFn) {
+	quantumRegister.beginOperationBatch();
+	bool batchOpen = true;
+	try {
+		executeFn();
+		quantumRegister.endOperationBatch();
+		batchOpen = false;
+	} catch(...) {
+		if(batchOpen) {
+			try {
+				quantumRegister.endOperationBatch();
+			} catch(...) {}
+		}
+		throw;
+	}
+}
+
+} // namespace
 
 void CompiledAlgorithmPlan::addOperation(const AlgorithmOperation &operation) {
 	steps.push_back(operation);
@@ -41,26 +62,30 @@ void executeOperation(QuantumRegister &quantumRegister, const AlgorithmOperation
 }
 
 void executeOperations(QuantumRegister &quantumRegister, const std::vector<AlgorithmOperation> &operations) {
-	for(const AlgorithmOperation &operation : operations) {
-		executeOperation(quantumRegister, operation);
-	}
+	runWithOperationBatch(quantumRegister, [&]() {
+		for(const AlgorithmOperation &operation : operations) {
+			executeOperation(quantumRegister, operation);
+		}
+	});
 }
 
 void executePlan(QuantumRegister &quantumRegister, const CompiledAlgorithmPlan &plan) {
-	for(const CompiledAlgorithmStep &step : plan.steps) {
-		std::visit(
-			[&](const auto &item) {
-				using Item = std::decay_t<decltype(item)>;
-				if constexpr(std::is_same<Item, AlgorithmOperation>::value) {
-					executeOperation(quantumRegister, item);
-				} else if constexpr(std::is_same<Item, RepeatBlockStep>::value) {
-					for(unsigned int iteration = 0; iteration < item.repeatCount; ++iteration) {
-						executeOperations(quantumRegister, item.operations);
+	runWithOperationBatch(quantumRegister, [&]() {
+		for(const CompiledAlgorithmStep &step : plan.steps) {
+			std::visit(
+				[&](const auto &item) {
+					using Item = std::decay_t<decltype(item)>;
+					if constexpr(std::is_same<Item, AlgorithmOperation>::value) {
+						executeOperation(quantumRegister, item);
+					} else if constexpr(std::is_same<Item, RepeatBlockStep>::value) {
+						for(unsigned int iteration = 0; iteration < item.repeatCount; ++iteration) {
+							executeOperations(quantumRegister, item.operations);
+						}
 					}
-				}
-			},
-			step);
-	}
+				},
+				step);
+		}
+	});
 }
 
 } // namespace algorithms

@@ -53,6 +53,8 @@ class QuantumRegister {
 		void applyControlledPhaseShift(QubitIndex controlQubit, QubitIndex targetQubit, double theta);
 		void applyControlledNot(QubitIndex controlQubit, QubitIndex targetQubit);
 		void applySwap(QubitIndex qubit1, QubitIndex qubit2);
+		void beginOperationBatch();
+		void endOperationBatch();
 
 	private:
 		unsigned int numQubits_ = 0;

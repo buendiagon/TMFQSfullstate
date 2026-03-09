@@ -12,6 +12,7 @@
 #include <ostream>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -169,7 +170,8 @@ class BloscStateBackend : public IStateBackend {
 				std::vector<double> buffer;
 				int64_t chunkIndex = -1;
 				bool dirty = false;
-				uint64_t age = 0;
+				size_t lruPrev = std::numeric_limits<size_t>::max();
+				size_t lruNext = std::numeric_limits<size_t>::max();
 			};
 
 			struct StateChunkRef {
@@ -183,6 +185,19 @@ class BloscStateBackend : public IStateBackend {
 				double *amp = nullptr; // points to {real, imag}
 			};
 
+			enum class PairMutation : uint8_t {
+				None = 0u,
+				First = 1u,
+				Second = 2u,
+				Both = 3u
+			};
+
+			enum class PairKernelMode {
+				Fallback,
+				IntraChunk,
+				InterChunk
+			};
+
 			unsigned int numQubits_ = 0;
 			unsigned int numStates_ = 0;
 			RegisterConfig cfg_;
@@ -192,7 +207,11 @@ class BloscStateBackend : public IStateBackend {
 			std::vector<uint8_t> compressionScratch_;
 			mutable std::vector<double> ioChunkScratch_;
 			std::vector<CacheSlot> gateCache_;
-			uint64_t cacheAgeCounter_ = 1;
+			std::unordered_map<int64_t, size_t> chunkToSlot_;
+			std::vector<size_t> freeSlots_;
+			size_t lruHead_ = std::numeric_limits<size_t>::max();
+			size_t lruTail_ = std::numeric_limits<size_t>::max();
+			unsigned int batchDepth_ = 0;
 			GateBlockWorkspace gateWorkspace_;
 
 		size_t chunkStates() const {
@@ -211,6 +230,13 @@ class BloscStateBackend : public IStateBackend {
 				ensureBackendInitialized(static_cast<bool>(schunk_), "BloscStateBackend", opName);
 			}
 
+			void syncPendingCacheForRead() const {
+				if(batchDepth_ > 0u) {
+					auto *self = const_cast<BloscStateBackend *>(this);
+					self->flushAllSlots();
+				}
+			}
+
 			void resetCompressionScratch() {
 				compressionCtx_.reset();
 				compressionScratch_.clear();
@@ -220,17 +246,78 @@ class BloscStateBackend : public IStateBackend {
 				ioChunkScratch_.clear();
 			}
 
+			static constexpr size_t kInvalidSlot = std::numeric_limits<size_t>::max();
+
+			static bool touchesFirst(PairMutation mutation) {
+				return mutation == PairMutation::First || mutation == PairMutation::Both;
+			}
+
+			static bool touchesSecond(PairMutation mutation) {
+				return mutation == PairMutation::Second || mutation == PairMutation::Both;
+			}
+
+			void detachFromLru(size_t slotIndex) {
+				CacheSlot &slot = gateCache_[slotIndex];
+				if(slot.lruPrev == kInvalidSlot && slot.lruNext == kInvalidSlot && lruHead_ != slotIndex) {
+					return;
+				}
+				if(slot.lruPrev != kInvalidSlot) {
+					gateCache_[slot.lruPrev].lruNext = slot.lruNext;
+				} else {
+					lruHead_ = slot.lruNext;
+				}
+				if(slot.lruNext != kInvalidSlot) {
+					gateCache_[slot.lruNext].lruPrev = slot.lruPrev;
+				} else {
+					lruTail_ = slot.lruPrev;
+				}
+				slot.lruPrev = kInvalidSlot;
+				slot.lruNext = kInvalidSlot;
+			}
+
+			void attachToLruFront(size_t slotIndex) {
+				CacheSlot &slot = gateCache_[slotIndex];
+				slot.lruPrev = kInvalidSlot;
+				slot.lruNext = lruHead_;
+				if(lruHead_ != kInvalidSlot) {
+					gateCache_[lruHead_].lruPrev = slotIndex;
+				} else {
+					lruTail_ = slotIndex;
+				}
+				lruHead_ = slotIndex;
+			}
+
+			void markSlotRecent(size_t slotIndex) {
+				if(lruHead_ == slotIndex) return;
+				detachFromLru(slotIndex);
+				attachToLruFront(slotIndex);
+			}
+
 			void resetGateCacheEntries() {
+				chunkToSlot_.clear();
+				freeSlots_.clear();
+				lruHead_ = kInvalidSlot;
+				lruTail_ = kInvalidSlot;
+				freeSlots_.reserve(gateCache_.size());
 				for(CacheSlot &slot : gateCache_) {
 					slot.chunkIndex = -1;
 					slot.dirty = false;
-					slot.age = 0;
+					slot.lruPrev = kInvalidSlot;
+					slot.lruNext = kInvalidSlot;
 				}
-				cacheAgeCounter_ = 1;
+				for(size_t slot = gateCache_.size(); slot > 0; --slot) {
+					freeSlots_.push_back(slot - 1u);
+				}
 			}
 
 			void invalidateGateCache() {
 				resetGateCacheEntries();
+			}
+
+			void flushDirtyCacheIfNeeded() {
+				if(batchDepth_ == 0u) {
+					flushAllSlots();
+				}
 			}
 
 			void ensureGateCacheStorage() {
@@ -250,6 +337,20 @@ class BloscStateBackend : public IStateBackend {
 				if(shouldResetEntries) {
 					resetGateCacheEntries();
 				}
+			}
+
+			PairKernelMode selectPairKernelMode(unsigned int targetMask) const {
+				const size_t statesPerChunk = chunkStates();
+				if(statesPerChunk == 0u || (statesPerChunk & (statesPerChunk - 1u)) != 0u) {
+					return PairKernelMode::Fallback;
+				}
+				if(static_cast<size_t>(targetMask) < statesPerChunk) {
+					return PairKernelMode::IntraChunk;
+				}
+				if((static_cast<size_t>(targetMask) % statesPerChunk) == 0u) {
+					return PairKernelMode::InterChunk;
+				}
+				return PairKernelMode::Fallback;
 			}
 
 		blosc2_cparams makeCParams() const {
@@ -406,38 +507,39 @@ class BloscStateBackend : public IStateBackend {
 			}
 
 		int getSlot(int64_t chunkIndex) {
-			for(size_t slot = 0; slot < gateCache_.size(); ++slot) {
-				if(gateCache_[slot].chunkIndex == chunkIndex) {
-					gateCache_[slot].age = cacheAgeCounter_++;
-					return static_cast<int>(slot);
-				}
+			const auto hit = chunkToSlot_.find(chunkIndex);
+			if(hit != chunkToSlot_.end()) {
+				markSlotRecent(hit->second);
+				return static_cast<int>(hit->second);
 			}
 
-			size_t evict = 0;
-			bool foundFree = false;
-			for(size_t slot = 0; slot < gateCache_.size(); ++slot) {
-				if(gateCache_[slot].chunkIndex < 0) {
-					evict = slot;
-					foundFree = true;
-					break;
+			size_t slotIndex = kInvalidSlot;
+			if(!freeSlots_.empty()) {
+				slotIndex = freeSlots_.back();
+				freeSlots_.pop_back();
+			} else {
+				slotIndex = lruTail_;
+				if(slotIndex == kInvalidSlot) {
+					throw std::logic_error("BloscStateBackend cache invariant broken: no free slot and empty LRU");
 				}
-			}
-			if(!foundFree) {
-				for(size_t slot = 1; slot < gateCache_.size(); ++slot) {
-					if(gateCache_[slot].age < gateCache_[evict].age) {
-						evict = slot;
-					}
+				flushSlot(slotIndex);
+				CacheSlot &evicted = gateCache_[slotIndex];
+				if(evicted.chunkIndex >= 0) {
+					chunkToSlot_.erase(evicted.chunkIndex);
 				}
+				detachFromLru(slotIndex);
 			}
 
-				flushSlot(evict);
-				CacheSlot &slot = gateCache_[evict];
-				const size_t chunkElems = chunkElemsForIndex(chunkIndex);
-				readChunk(chunkIndex, slot.buffer, chunkElems);
-				slot.chunkIndex = chunkIndex;
-				slot.dirty = false;
-				slot.age = cacheAgeCounter_++;
-			return static_cast<int>(evict);
+			CacheSlot &slot = gateCache_[slotIndex];
+			const size_t chunkElems = chunkElemsForIndex(chunkIndex);
+			readChunk(chunkIndex, slot.buffer, chunkElems);
+			slot.chunkIndex = chunkIndex;
+			slot.dirty = false;
+			slot.lruPrev = kInvalidSlot;
+			slot.lruNext = kInvalidSlot;
+			chunkToSlot_[chunkIndex] = slotIndex;
+			attachToLruFront(slotIndex);
+			return static_cast<int>(slotIndex);
 		}
 
 		CacheAmplitudeRef acquireCacheAmplitude(StateIndex state, size_t statesPerChunk) {
@@ -445,6 +547,116 @@ class BloscStateBackend : public IStateBackend {
 			const size_t elemOffset = static_cast<size_t>(state % statesPerChunk) * 2u;
 			CacheSlot &slot = gateCache_[static_cast<size_t>(getSlot(chunkIndex))];
 			return {&slot, slot.buffer.data() + elemOffset};
+		}
+
+		template <typename PairFn>
+		void runPairKernelFallback(unsigned int targetMask, PairFn pairFn) {
+			const size_t statesPerChunk = chunkStates();
+			forEachStatePairByMask(numStates_, targetMask, [&](unsigned int state0, unsigned int state1) {
+				CacheAmplitudeRef a0Ref = acquireCacheAmplitude(state0, statesPerChunk);
+				CacheAmplitudeRef a1Ref = acquireCacheAmplitude(state1, statesPerChunk);
+				const PairMutation mutation = pairFn(state0, state1, a0Ref.amp, a1Ref.amp);
+				if(mutation == PairMutation::None) return;
+				if(a0Ref.slot == a1Ref.slot) {
+					a0Ref.slot->dirty = true;
+					return;
+				}
+				if(touchesFirst(mutation)) {
+					a0Ref.slot->dirty = true;
+				}
+				if(touchesSecond(mutation)) {
+					a1Ref.slot->dirty = true;
+				}
+			});
+		}
+
+		template <typename PairFn>
+		void runPairKernelIntraChunk(unsigned int targetMask, PairFn pairFn) {
+			const size_t statesPerChunk = chunkStates();
+			const size_t localMask = static_cast<size_t>(targetMask);
+			const size_t stride = localMask << 1u;
+			for(int64_t chunkIndex = 0; chunkIndex < schunk_->nchunks; ++chunkIndex) {
+				const size_t slotIndex = static_cast<size_t>(getSlot(chunkIndex));
+				CacheSlot &slot = gateCache_[slotIndex];
+				const size_t statesInChunk = chunkElemsForIndex(chunkIndex) / 2u;
+				const size_t chunkBaseState = static_cast<size_t>(chunkIndex) * statesPerChunk;
+				bool dirty = false;
+				for(size_t base = 0; base < statesInChunk; base += stride) {
+					for(size_t offset = 0; offset < localMask; ++offset) {
+						const size_t local0 = base + offset;
+						if(local0 + localMask >= statesInChunk) break;
+						const size_t local1 = local0 + localMask;
+						double *amp0 = slot.buffer.data() + local0 * 2u;
+						double *amp1 = slot.buffer.data() + local1 * 2u;
+						const StateIndex state0 = static_cast<StateIndex>(chunkBaseState + local0);
+						const StateIndex state1 = static_cast<StateIndex>(chunkBaseState + local1);
+						if(pairFn(state0, state1, amp0, amp1) != PairMutation::None) {
+							dirty = true;
+						}
+					}
+				}
+				if(dirty) {
+					slot.dirty = true;
+				}
+			}
+		}
+
+		template <typename PairFn>
+		void runPairKernelInterChunk(unsigned int targetMask, PairFn pairFn) {
+			const size_t statesPerChunk = chunkStates();
+			const size_t chunkDelta = static_cast<size_t>(targetMask) / statesPerChunk;
+			const size_t chunkStride = chunkDelta << 1u;
+			const size_t nchunks = static_cast<size_t>(schunk_->nchunks);
+			for(size_t groupBase = 0; groupBase < nchunks; groupBase += chunkStride) {
+				for(size_t groupOffset = 0; groupOffset < chunkDelta; ++groupOffset) {
+					const size_t chunk0 = groupBase + groupOffset;
+					const size_t chunk1 = chunk0 + chunkDelta;
+					if(chunk1 >= nchunks) break;
+
+					const size_t slot0Index = static_cast<size_t>(getSlot(static_cast<int64_t>(chunk0)));
+					const size_t slot1Index = static_cast<size_t>(getSlot(static_cast<int64_t>(chunk1)));
+					CacheSlot &slot0 = gateCache_[slot0Index];
+					CacheSlot &slot1 = gateCache_[slot1Index];
+					const size_t statesInChunk0 = chunkElemsForIndex(static_cast<int64_t>(chunk0)) / 2u;
+					const size_t statesInChunk1 = chunkElemsForIndex(static_cast<int64_t>(chunk1)) / 2u;
+					const size_t statesInPair = std::min(statesInChunk0, statesInChunk1);
+					const size_t chunk0BaseState = chunk0 * statesPerChunk;
+					const size_t chunk1BaseState = chunk1 * statesPerChunk;
+					bool dirty0 = false;
+					bool dirty1 = false;
+					for(size_t local = 0; local < statesInPair; ++local) {
+						double *amp0 = slot0.buffer.data() + local * 2u;
+						double *amp1 = slot1.buffer.data() + local * 2u;
+						const StateIndex state0 = static_cast<StateIndex>(chunk0BaseState + local);
+						const StateIndex state1 = static_cast<StateIndex>(chunk1BaseState + local);
+						const PairMutation mutation = pairFn(state0, state1, amp0, amp1);
+						dirty0 = dirty0 || touchesFirst(mutation);
+						dirty1 = dirty1 || touchesSecond(mutation);
+					}
+					if(dirty0) slot0.dirty = true;
+					if(dirty1) slot1.dirty = true;
+				}
+			}
+		}
+
+		template <typename PairFn>
+		void runPairKernel(unsigned int targetMask, PairFn pairFn) {
+			switch(selectPairKernelMode(targetMask)) {
+				case PairKernelMode::IntraChunk:
+					runPairKernelIntraChunk(targetMask, pairFn);
+					break;
+				case PairKernelMode::InterChunk:
+					if(gateCache_.size() >= 2u) {
+						runPairKernelInterChunk(targetMask, pairFn);
+					} else {
+						runPairKernelFallback(targetMask, pairFn);
+					}
+					break;
+				case PairKernelMode::Fallback:
+				default:
+					runPairKernelFallback(targetMask, pairFn);
+					break;
+			}
 		}
 
 		void swap(BloscStateBackend &other) noexcept {
@@ -458,7 +670,11 @@ class BloscStateBackend : public IStateBackend {
 				swap(compressionScratch_, other.compressionScratch_);
 				swap(ioChunkScratch_, other.ioChunkScratch_);
 				swap(gateCache_, other.gateCache_);
-				swap(cacheAgeCounter_, other.cacheAgeCounter_);
+				swap(chunkToSlot_, other.chunkToSlot_);
+				swap(freeSlots_, other.freeSlots_);
+				swap(lruHead_, other.lruHead_);
+				swap(lruTail_, other.lruTail_);
+				swap(batchDepth_, other.batchDepth_);
 				swap(gateWorkspace_, other.gateWorkspace_);
 			}
 
@@ -504,6 +720,20 @@ class BloscStateBackend : public IStateBackend {
 
 		std::unique_ptr<IStateBackend> clone() const override {
 			return std::make_unique<BloscStateBackend>(*this);
+		}
+
+		void beginOperationBatch() override {
+			++batchDepth_;
+		}
+
+		void endOperationBatch() override {
+			if(batchDepth_ == 0u) {
+				throw std::logic_error("BloscStateBackend::endOperationBatch called without matching beginOperationBatch");
+			}
+			--batchDepth_;
+			if(batchDepth_ == 0u) {
+				flushAllSlots();
+			}
 		}
 
 			void initZero(unsigned int numQubits) override {
@@ -590,6 +820,7 @@ class BloscStateBackend : public IStateBackend {
 
 			Amplitude amplitude(StateIndex state) const override {
 				ensureInitialized("amplitude query");
+				syncPendingCacheForRead();
 				validateState(state);
 				const StateChunkRef chunkRef = locateState(state);
 				readChunk(chunkRef.chunkIndex, ioChunkScratch_, chunkRef.chunkElems);
@@ -598,6 +829,7 @@ class BloscStateBackend : public IStateBackend {
 
 			void setAmplitude(StateIndex state, Amplitude amp) override {
 				ensureInitialized("state update");
+				flushAllSlots();
 				validateState(state);
 				const StateChunkRef chunkRef = locateState(state);
 				readChunk(chunkRef.chunkIndex, ioChunkScratch_, chunkRef.chunkElems);
@@ -614,6 +846,7 @@ class BloscStateBackend : public IStateBackend {
 
 		double totalProbability() const override {
 			ensureInitialized("total probability query");
+			syncPendingCacheForRead();
 			double sum = 0.0;
 			const size_t chunkElemsMax = elemsPerChunk();
 			std::vector<double> buffer(chunkElemsMax, 0.0);
@@ -632,6 +865,7 @@ class BloscStateBackend : public IStateBackend {
 
 		StateIndex sampleMeasurement(double rnd) const override {
 			ensureInitialized("measurement");
+				syncPendingCacheForRead();
 				if(rnd < 0.0 || rnd >= 1.0) {
 					throw std::invalid_argument("BloscStateBackend::sampleMeasurement requires rnd in [0,1)");
 				}
@@ -659,6 +893,7 @@ class BloscStateBackend : public IStateBackend {
 
 		void printNonZeroStates(std::ostream &os, double epsilon) const override {
 			ensureInitialized("state printing");
+				syncPendingCacheForRead();
 				if(epsilon < 0.0) {
 					throw std::invalid_argument("BloscStateBackend::printNonZeroStates epsilon must be non-negative");
 				}
@@ -683,6 +918,7 @@ class BloscStateBackend : public IStateBackend {
 
 			void phaseFlipBasisState(StateIndex state) override {
 				ensureInitialized("basis-state phase flip");
+				flushAllSlots();
 				validateState(state);
 				const StateChunkRef chunkRef = locateState(state);
 				readChunk(chunkRef.chunkIndex, ioChunkScratch_, chunkRef.chunkElems);
@@ -694,6 +930,7 @@ class BloscStateBackend : public IStateBackend {
 
 		void inversionAboutMean() override {
 			ensureInitialized("inversion about mean");
+			flushAllSlots();
 			if(numStates_ == 0) {
 				throw std::logic_error("BloscStateBackend::inversionAboutMean requires a non-empty state");
 			}
@@ -732,43 +969,36 @@ class BloscStateBackend : public IStateBackend {
 			const unsigned int targetMask = qubitMaskFromMsbIndex(qubit, numQubits_);
 			const double invSqrt2 = 1.0 / std::sqrt(2.0);
 			ensureGateCacheStorage();
-			const size_t statesPerChunk = chunkStates();
-
-			forEachStatePairByMask(numStates_, targetMask, [&](unsigned int state0, unsigned int state1) {
-				CacheAmplitudeRef a0Ref = acquireCacheAmplitude(state0, statesPerChunk);
-				CacheAmplitudeRef a1Ref = acquireCacheAmplitude(state1, statesPerChunk);
-
-				const double aReal = a0Ref.amp[0];
-				const double aImag = a0Ref.amp[1];
-				const double bReal = a1Ref.amp[0];
-				const double bImag = a1Ref.amp[1];
-				if(aReal == 0.0 && aImag == 0.0 && bReal == 0.0 && bImag == 0.0) return;
-
-				a0Ref.amp[0] = (aReal + bReal) * invSqrt2;
-				a0Ref.amp[1] = (aImag + bImag) * invSqrt2;
-				a1Ref.amp[0] = (aReal - bReal) * invSqrt2;
-				a1Ref.amp[1] = (aImag - bImag) * invSqrt2;
-				a0Ref.slot->dirty = true;
-				a1Ref.slot->dirty = true;
+			runPairKernel(targetMask, [&](StateIndex, StateIndex, double *a0, double *a1) -> PairMutation {
+				const double aReal = a0[0];
+				const double aImag = a0[1];
+				const double bReal = a1[0];
+				const double bImag = a1[1];
+				if(aReal == 0.0 && aImag == 0.0 && bReal == 0.0 && bImag == 0.0) {
+					return PairMutation::None;
+				}
+				a0[0] = (aReal + bReal) * invSqrt2;
+				a0[1] = (aImag + bImag) * invSqrt2;
+				a1[0] = (aReal - bReal) * invSqrt2;
+				a1[1] = (aImag - bImag) * invSqrt2;
+				return PairMutation::Both;
 			});
-			flushAllSlots();
+			flushDirtyCacheIfNeeded();
 		}
 
 		void applyPauliX(QubitIndex qubit) override {
 			validateSingleQubitOperation(qubit, "PauliX");
 			const unsigned int targetMask = qubitMaskFromMsbIndex(qubit, numQubits_);
 			ensureGateCacheStorage();
-			const size_t statesPerChunk = chunkStates();
-
-			forEachStatePairByMask(numStates_, targetMask, [&](unsigned int state0, unsigned int state1) {
-				CacheAmplitudeRef a0Ref = acquireCacheAmplitude(state0, statesPerChunk);
-				CacheAmplitudeRef a1Ref = acquireCacheAmplitude(state1, statesPerChunk);
-				std::swap(a0Ref.amp[0], a1Ref.amp[0]);
-				std::swap(a0Ref.amp[1], a1Ref.amp[1]);
-				a0Ref.slot->dirty = true;
-				a1Ref.slot->dirty = true;
+			runPairKernel(targetMask, [&](StateIndex, StateIndex, double *a0, double *a1) -> PairMutation {
+				if(a0[0] == a1[0] && a0[1] == a1[1]) {
+					return PairMutation::None;
+				}
+				std::swap(a0[0], a1[0]);
+				std::swap(a0[1], a1[1]);
+				return PairMutation::Both;
 			});
-			flushAllSlots();
+			flushDirtyCacheIfNeeded();
 		}
 
 		void applyControlledPhaseShift(QubitIndex controlQubit, QubitIndex targetQubit, double theta) override {
@@ -778,19 +1008,20 @@ class BloscStateBackend : public IStateBackend {
 			const double phaseReal = std::cos(theta);
 			const double phaseImag = std::sin(theta);
 			ensureGateCacheStorage();
-			const size_t statesPerChunk = chunkStates();
-
-			forEachStatePairByMask(numStates_, targetMask, [&](unsigned int, unsigned int state1) {
-				if((state1 & controlMask) == 0u) return;
-				CacheAmplitudeRef a1Ref = acquireCacheAmplitude(state1, statesPerChunk);
-				const double real = a1Ref.amp[0];
-				const double imag = a1Ref.amp[1];
-				if(real == 0.0 && imag == 0.0) return;
-				a1Ref.amp[0] = phaseReal * real - phaseImag * imag;
-				a1Ref.amp[1] = phaseReal * imag + phaseImag * real;
-				a1Ref.slot->dirty = true;
+			runPairKernel(targetMask, [&](StateIndex, StateIndex state1, double *, double *a1) -> PairMutation {
+				if((state1 & controlMask) == 0u) {
+					return PairMutation::None;
+				}
+				const double real = a1[0];
+				const double imag = a1[1];
+				if(real == 0.0 && imag == 0.0) {
+					return PairMutation::None;
+				}
+				a1[0] = phaseReal * real - phaseImag * imag;
+				a1[1] = phaseReal * imag + phaseImag * real;
+				return PairMutation::Second;
 			});
-			flushAllSlots();
+			flushDirtyCacheIfNeeded();
 		}
 
 		void applyControlledNot(QubitIndex controlQubit, QubitIndex targetQubit) override {
@@ -798,18 +1029,18 @@ class BloscStateBackend : public IStateBackend {
 			const unsigned int controlMask = qubitMaskFromMsbIndex(controlQubit, numQubits_);
 			const unsigned int targetMask = qubitMaskFromMsbIndex(targetQubit, numQubits_);
 			ensureGateCacheStorage();
-			const size_t statesPerChunk = chunkStates();
-
-			forEachStatePairByMask(numStates_, targetMask, [&](unsigned int state0, unsigned int state1) {
-				if((state0 & controlMask) == 0u) return;
-				CacheAmplitudeRef a0Ref = acquireCacheAmplitude(state0, statesPerChunk);
-				CacheAmplitudeRef a1Ref = acquireCacheAmplitude(state1, statesPerChunk);
-				std::swap(a0Ref.amp[0], a1Ref.amp[0]);
-				std::swap(a0Ref.amp[1], a1Ref.amp[1]);
-				a0Ref.slot->dirty = true;
-				a1Ref.slot->dirty = true;
+			runPairKernel(targetMask, [&](StateIndex state0, StateIndex, double *a0, double *a1) -> PairMutation {
+				if((state0 & controlMask) == 0u) {
+					return PairMutation::None;
+				}
+				if(a0[0] == a1[0] && a0[1] == a1[1]) {
+					return PairMutation::None;
+				}
+				std::swap(a0[0], a1[0]);
+				std::swap(a0[1], a1[1]);
+				return PairMutation::Both;
 			});
-			flushAllSlots();
+			flushDirtyCacheIfNeeded();
 		}
 
 			void applyGate(const QuantumGate &gate, const QubitList &qubits) override {
@@ -862,7 +1093,7 @@ class BloscStateBackend : public IStateBackend {
 					storeAmplitude,
 					gateWorkspace_);
 
-				flushAllSlots();
+				flushDirtyCacheIfNeeded();
 			}
 };
 

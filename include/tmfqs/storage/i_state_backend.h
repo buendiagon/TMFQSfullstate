@@ -35,6 +35,10 @@ class IStateBackend {
 		virtual void applyControlledNot(QubitIndex controlQubit, QubitIndex targetQubit) = 0;
 
 		virtual void applyGate(const QuantumGate &gate, const QubitList &qubits) = 0;
+
+		// Optional hook for batching many gate updates before flushing backend state.
+		virtual void beginOperationBatch() {}
+		virtual void endOperationBatch() {}
 };
 
 } // namespace tmfqs
