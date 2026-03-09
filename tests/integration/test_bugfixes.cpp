@@ -339,6 +339,48 @@ void testUniformSuperpositionValidation() {
 	assert(outOfRangeThrew);
 }
 
+void testApplyGateBuiltinDispatchParity() {
+	using namespace tmfqs;
+	std::cout << "=== applyGate built-in parity ===\n";
+	if(!isStrategyAvailable(StorageStrategyKind::Blosc)) {
+		std::cout << "Blosc backend unavailable in this build, skipping applyGate built-in parity test.\n";
+		return;
+	}
+
+	RegisterConfig denseCfg;
+	denseCfg.strategy = StorageStrategyKind::Dense;
+	RegisterConfig bloscCfg;
+	bloscCfg.strategy = StorageStrategyKind::Blosc;
+	bloscCfg.blosc.chunkStates = 8;
+	bloscCfg.blosc.gateCacheSlots = 4;
+
+	QuantumRegister denseReg(4, 0, denseCfg);
+	QuantumRegister bloscReg(4, 0, bloscCfg);
+
+	const QuantumGate hadamard = QuantumGate::Hadamard();
+	const QuantumGate pauliX = QuantumGate::PauliX();
+	const QuantumGate cnot = QuantumGate::ControlledNot();
+	const QuantumGate cps = QuantumGate::ControlledPhaseShift(kPi / 7.0);
+
+	denseReg.applyGate(hadamard, QubitList{0});
+	denseReg.applyGate(pauliX, QubitList{3});
+	denseReg.applyGate(cnot, QubitList{0, 2});
+	denseReg.applyGate(cps, QubitList{2, 1});
+
+	bloscReg.applyGate(hadamard, QubitList{0});
+	bloscReg.applyGate(pauliX, QubitList{3});
+	bloscReg.applyGate(cnot, QubitList{0, 2});
+	bloscReg.applyGate(cps, QubitList{2, 1});
+
+	for(unsigned int s = 0; s < denseReg.stateCount(); ++s) {
+		const Amplitude a = denseReg.amplitude(s);
+		const Amplitude b = bloscReg.amplitude(s);
+		assert(approxEqual(a.real, b.real, 1e-9));
+		assert(approxEqual(a.imag, b.imag, 1e-9));
+	}
+	assert(approxEqual(denseReg.totalProbability(), bloscReg.totalProbability(), 1e-9));
+}
+
 } // namespace
 
 int main() {
@@ -359,6 +401,7 @@ int main() {
 	testDenseVsBloscParity();
 	testPublicGateValidation();
 	testApplyGateValidation();
+	testApplyGateBuiltinDispatchParity();
 	testUniformSuperpositionValidation();
 
 	std::cout << "All integration tests passed.\n";

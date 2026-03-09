@@ -69,6 +69,78 @@ int32_t checkedElemsBytesToI32(size_t numElems, const char *context) {
 	return checkedBytesToI32(numElems * sizeof(double), context);
 }
 
+constexpr double kGateMatchTolerance = 1e-12;
+
+bool approxEqual(double a, double b, double tol = kGateMatchTolerance) {
+	return std::abs(a - b) <= tol;
+}
+
+bool matchesAmplitude(const Amplitude &amp, double real, double imag = 0.0) {
+	return approxEqual(amp.real, real) && approxEqual(amp.imag, imag);
+}
+
+bool isZeroAmplitude(const Amplitude &amp) {
+	return matchesAmplitude(amp, 0.0, 0.0);
+}
+
+bool matchesHadamardGate(const QuantumGate &gate) {
+	if(gate.dimension() != 2u) return false;
+	const double invSqrt2 = 1.0 / std::sqrt(2.0);
+	return matchesAmplitude(gate[0][0], invSqrt2) &&
+	       matchesAmplitude(gate[0][1], invSqrt2) &&
+	       matchesAmplitude(gate[1][0], invSqrt2) &&
+	       matchesAmplitude(gate[1][1], -invSqrt2);
+}
+
+bool matchesPauliXGate(const QuantumGate &gate) {
+	if(gate.dimension() != 2u) return false;
+	return isZeroAmplitude(gate[0][0]) &&
+	       matchesAmplitude(gate[0][1], 1.0) &&
+	       matchesAmplitude(gate[1][0], 1.0) &&
+	       isZeroAmplitude(gate[1][1]);
+}
+
+bool matchesControlledNotGate(const QuantumGate &gate) {
+	if(gate.dimension() != 4u) return false;
+	for(unsigned int row = 0; row < 4u; ++row) {
+		for(unsigned int col = 0; col < 4u; ++col) {
+			const bool isOne =
+				(row == 0u && col == 0u) ||
+				(row == 1u && col == 1u) ||
+				(row == 2u && col == 3u) ||
+				(row == 3u && col == 2u);
+			if(isOne) {
+				if(!matchesAmplitude(gate[row][col], 1.0)) return false;
+			} else if(!isZeroAmplitude(gate[row][col])) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+bool matchControlledPhaseShiftGate(const QuantumGate &gate, double &thetaOut) {
+	if(gate.dimension() != 4u) return false;
+	for(unsigned int row = 0; row < 4u; ++row) {
+		for(unsigned int col = 0; col < 4u; ++col) {
+			const bool isDiag = (row == col);
+			if(!isDiag && !isZeroAmplitude(gate[row][col])) {
+				return false;
+			}
+		}
+	}
+	if(!matchesAmplitude(gate[0][0], 1.0) ||
+	   !matchesAmplitude(gate[1][1], 1.0) ||
+	   !matchesAmplitude(gate[2][2], 1.0)) {
+		return false;
+	}
+	const Amplitude phase = gate[3][3];
+	const double magnitudeSq = phase.real * phase.real + phase.imag * phase.imag;
+	if(!approxEqual(magnitudeSq, 1.0, 1e-10)) return false;
+	thetaOut = std::atan2(phase.imag, phase.real);
+	return true;
+}
+
 void validateBloscConfig(const RegisterConfig &cfg) {
 	if(cfg.blosc.chunkStates == 0) {
 		throw std::invalid_argument("BloscStateBackend: chunkStates must be >= 1");
@@ -104,6 +176,11 @@ class BloscStateBackend : public IStateBackend {
 				int64_t chunkIndex = 0;
 				size_t elemOffset = 0;
 				size_t chunkElems = 0;
+			};
+
+			struct CacheAmplitudeRef {
+				CacheSlot *slot = nullptr;
+				double *amp = nullptr; // points to {real, imag}
 			};
 
 			unsigned int numQubits_ = 0;
@@ -361,6 +438,13 @@ class BloscStateBackend : public IStateBackend {
 				slot.dirty = false;
 				slot.age = cacheAgeCounter_++;
 			return static_cast<int>(evict);
+		}
+
+		CacheAmplitudeRef acquireCacheAmplitude(StateIndex state, size_t statesPerChunk) {
+			const int64_t chunkIndex = static_cast<int64_t>(state / statesPerChunk);
+			const size_t elemOffset = static_cast<size_t>(state % statesPerChunk) * 2u;
+			CacheSlot &slot = gateCache_[static_cast<size_t>(getSlot(chunkIndex))];
+			return {&slot, slot.buffer.data() + elemOffset};
 		}
 
 		void swap(BloscStateBackend &other) noexcept {
@@ -645,26 +729,111 @@ class BloscStateBackend : public IStateBackend {
 
 		void applyHadamard(QubitIndex qubit) override {
 			validateSingleQubitOperation(qubit, "Hadamard");
-			applyGate(QuantumGate::Hadamard(), QubitList{qubit});
+			const unsigned int targetMask = qubitMaskFromMsbIndex(qubit, numQubits_);
+			const double invSqrt2 = 1.0 / std::sqrt(2.0);
+			ensureGateCacheStorage();
+			const size_t statesPerChunk = chunkStates();
+
+			forEachStatePairByMask(numStates_, targetMask, [&](unsigned int state0, unsigned int state1) {
+				CacheAmplitudeRef a0Ref = acquireCacheAmplitude(state0, statesPerChunk);
+				CacheAmplitudeRef a1Ref = acquireCacheAmplitude(state1, statesPerChunk);
+
+				const double aReal = a0Ref.amp[0];
+				const double aImag = a0Ref.amp[1];
+				const double bReal = a1Ref.amp[0];
+				const double bImag = a1Ref.amp[1];
+				if(aReal == 0.0 && aImag == 0.0 && bReal == 0.0 && bImag == 0.0) return;
+
+				a0Ref.amp[0] = (aReal + bReal) * invSqrt2;
+				a0Ref.amp[1] = (aImag + bImag) * invSqrt2;
+				a1Ref.amp[0] = (aReal - bReal) * invSqrt2;
+				a1Ref.amp[1] = (aImag - bImag) * invSqrt2;
+				a0Ref.slot->dirty = true;
+				a1Ref.slot->dirty = true;
+			});
+			flushAllSlots();
 		}
 
 		void applyPauliX(QubitIndex qubit) override {
 			validateSingleQubitOperation(qubit, "PauliX");
-			applyGate(QuantumGate::PauliX(), QubitList{qubit});
+			const unsigned int targetMask = qubitMaskFromMsbIndex(qubit, numQubits_);
+			ensureGateCacheStorage();
+			const size_t statesPerChunk = chunkStates();
+
+			forEachStatePairByMask(numStates_, targetMask, [&](unsigned int state0, unsigned int state1) {
+				CacheAmplitudeRef a0Ref = acquireCacheAmplitude(state0, statesPerChunk);
+				CacheAmplitudeRef a1Ref = acquireCacheAmplitude(state1, statesPerChunk);
+				std::swap(a0Ref.amp[0], a1Ref.amp[0]);
+				std::swap(a0Ref.amp[1], a1Ref.amp[1]);
+				a0Ref.slot->dirty = true;
+				a1Ref.slot->dirty = true;
+			});
+			flushAllSlots();
 		}
 
 		void applyControlledPhaseShift(QubitIndex controlQubit, QubitIndex targetQubit, double theta) override {
 			validateTwoQubitOperation(controlQubit, targetQubit, "controlled phase shift");
-			applyGate(QuantumGate::ControlledPhaseShift(theta), QubitList{controlQubit, targetQubit});
+			const unsigned int controlMask = qubitMaskFromMsbIndex(controlQubit, numQubits_);
+			const unsigned int targetMask = qubitMaskFromMsbIndex(targetQubit, numQubits_);
+			const double phaseReal = std::cos(theta);
+			const double phaseImag = std::sin(theta);
+			ensureGateCacheStorage();
+			const size_t statesPerChunk = chunkStates();
+
+			forEachStatePairByMask(numStates_, targetMask, [&](unsigned int, unsigned int state1) {
+				if((state1 & controlMask) == 0u) return;
+				CacheAmplitudeRef a1Ref = acquireCacheAmplitude(state1, statesPerChunk);
+				const double real = a1Ref.amp[0];
+				const double imag = a1Ref.amp[1];
+				if(real == 0.0 && imag == 0.0) return;
+				a1Ref.amp[0] = phaseReal * real - phaseImag * imag;
+				a1Ref.amp[1] = phaseReal * imag + phaseImag * real;
+				a1Ref.slot->dirty = true;
+			});
+			flushAllSlots();
 		}
 
 		void applyControlledNot(QubitIndex controlQubit, QubitIndex targetQubit) override {
 			validateTwoQubitOperation(controlQubit, targetQubit, "controlled not");
-			applyGate(QuantumGate::ControlledNot(), QubitList{controlQubit, targetQubit});
+			const unsigned int controlMask = qubitMaskFromMsbIndex(controlQubit, numQubits_);
+			const unsigned int targetMask = qubitMaskFromMsbIndex(targetQubit, numQubits_);
+			ensureGateCacheStorage();
+			const size_t statesPerChunk = chunkStates();
+
+			forEachStatePairByMask(numStates_, targetMask, [&](unsigned int state0, unsigned int state1) {
+				if((state0 & controlMask) == 0u) return;
+				CacheAmplitudeRef a0Ref = acquireCacheAmplitude(state0, statesPerChunk);
+				CacheAmplitudeRef a1Ref = acquireCacheAmplitude(state1, statesPerChunk);
+				std::swap(a0Ref.amp[0], a1Ref.amp[0]);
+				std::swap(a0Ref.amp[1], a1Ref.amp[1]);
+				a0Ref.slot->dirty = true;
+				a1Ref.slot->dirty = true;
+			});
+			flushAllSlots();
 		}
 
 			void applyGate(const QuantumGate &gate, const QubitList &qubits) override {
 				validateGateApplicationInputs(gate, qubits);
+				if(qubits.size() == 1u) {
+					if(matchesHadamardGate(gate)) {
+						applyHadamard(qubits[0]);
+						return;
+					}
+					if(matchesPauliXGate(gate)) {
+						applyPauliX(qubits[0]);
+						return;
+					}
+				} else if(qubits.size() == 2u) {
+					if(matchesControlledNotGate(gate)) {
+						applyControlledNot(qubits[0], qubits[1]);
+						return;
+					}
+					double theta = 0.0;
+					if(matchControlledPhaseShiftGate(gate, theta)) {
+						applyControlledPhaseShift(qubits[0], qubits[1], theta);
+						return;
+					}
+				}
 				ensureGateCacheStorage();
 
 				const size_t statesPerChunk = chunkStates();
