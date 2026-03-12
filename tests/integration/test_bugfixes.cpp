@@ -381,6 +381,46 @@ void testApplyGateBuiltinDispatchParity() {
 	assert(approxEqual(denseReg.totalProbability(), bloscReg.totalProbability(), 1e-9));
 }
 
+void testDenseVsZfpSmoke() {
+	using namespace tmfqs;
+	std::cout << "=== dense vs zfp smoke ===\n";
+	if(!isStrategyAvailable(StorageStrategyKind::Zfp)) {
+		std::cout << "Zfp backend unavailable in this build, skipping zfp smoke test.\n";
+		return;
+	}
+
+	RegisterConfig denseCfg;
+	denseCfg.strategy = StorageStrategyKind::Dense;
+
+	RegisterConfig zfpCfg;
+	zfpCfg.strategy = StorageStrategyKind::Zfp;
+	zfpCfg.zfp.mode = ZfpCompressionMode::FixedRate;
+	zfpCfg.zfp.rate = 32.0;
+
+	QuantumRegister denseReg(4, 0, denseCfg);
+	QuantumRegister zfpReg(4, 0, zfpCfg);
+
+	const std::vector<algorithms::AlgorithmOperation> ops = {
+		algorithms::HadamardOp{0},
+		algorithms::HadamardOp{2},
+		algorithms::ControlledNotOp{0, 1},
+		algorithms::ControlledPhaseShiftOp{2, 3, kPi / 8.0},
+		algorithms::SwapOp{1, 3},
+		algorithms::PhaseFlipBasisStateOp{6},
+		algorithms::InversionAboutMeanOp{}
+	};
+	algorithms::executeOperations(denseReg, ops);
+	algorithms::executeOperations(zfpReg, ops);
+
+	for(unsigned int s = 0; s < denseReg.stateCount(); ++s) {
+		const Amplitude a = denseReg.amplitude(s);
+		const Amplitude b = zfpReg.amplitude(s);
+		assert(approxEqual(a.real, b.real, 5e-3));
+		assert(approxEqual(a.imag, b.imag, 5e-3));
+	}
+	assert(approxEqual(denseReg.totalProbability(), zfpReg.totalProbability(), 5e-3));
+}
+
 } // namespace
 
 int main() {
@@ -403,6 +443,7 @@ int main() {
 	testApplyGateValidation();
 	testApplyGateBuiltinDispatchParity();
 	testUniformSuperpositionValidation();
+	testDenseVsZfpSmoke();
 
 	std::cout << "All integration tests passed.\n";
 	return 0;

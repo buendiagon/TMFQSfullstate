@@ -60,7 +60,9 @@ The simulator is designed for:
 - **Compiler**: Intel oneAPI `icpx` (preferred, auto-detected) or `g++` with C++17 support
 - **OS**: Linux (tested on Fedora)
 - **Build**: GNU Make
-- **Optional dependency**: Blosc2 (`libblosc2`) for compressed storage strategy
+- **Optional dependencies**:
+  - Blosc2 (`libblosc2`) for chunked compressed storage strategy
+  - zfp (`libzfp`) for lossy fixed-rate/fixed-precision/fixed-accuracy compression strategy
 
 ---
 
@@ -91,6 +93,7 @@ This will:
 1. Compile the shared library `libtmfqsfs.so` in `lib64/`
 2. Compile all example programs in `bin/`
 3. Enable Blosc runtime strategy automatically if `blosc2.h` is available on the system
+4. Enable zfp runtime strategy automatically if `zfp.h` is available on the system
 
 ### Verify Installation
 
@@ -143,13 +146,22 @@ export LD_LIBRARY_PATH="/path/to/QSTest/lib64:$LD_LIBRARY_PATH"
 
 #### QFTG With Runtime Storage Strategy
 ```bash
-./bin/qftG <num_qubits> [--strategy dense|blosc|auto] [--chunk-states N] [--cache-slots N] [--clevel N] [--nthreads N] [--threshold-mb N]
+./bin/qftG <num_qubits> [--strategy dense|blosc|zfp|auto] [--chunk-states N] [--cache-slots N] [--clevel N] [--nthreads N] [--threshold-mb N] [--zfp-mode rate|precision|accuracy] [--zfp-rate R] [--zfp-precision B] [--zfp-accuracy A] [--zfp-chunk-states N] [--zfp-cache-slots N]
 
 # Example: force Dense
 ./bin/qftG 22 --strategy dense
 
 # Example: force Blosc
 ./bin/qftG 22 --strategy blosc --chunk-states 16384 --clevel 1
+
+# Example: force zfp with fixed-rate lossy compression
+./bin/qftG 22 --strategy zfp --zfp-rate 24
+
+# Example: zfp tuning (chunk size and cache)
+./bin/qftG 22 --strategy zfp --zfp-rate 24 --zfp-chunk-states 32768 --zfp-cache-slots 16
+
+# Tip: lower memory -> smaller cache/chunks, higher speed -> larger cache/chunks
+# ./bin/qftG 22 --strategy zfp --zfp-rate 24 --zfp-chunk-states 65536 --zfp-cache-slots 64
 
 # Example: auto-select by threshold
 ./bin/qftG 22 --strategy auto --threshold-mb 8
@@ -207,6 +219,14 @@ cfg.strategy = StorageStrategyKind::Blosc;
 cfg.blosc.chunkStates = 16384;
 cfg.blosc.gateCacheSlots = 8;
 QuantumRegister qreg_compressed(n, cfg);
+
+RegisterConfig zfpCfg;
+zfpCfg.strategy = StorageStrategyKind::Zfp;
+zfpCfg.zfp.mode = ZfpCompressionMode::FixedRate;
+zfpCfg.zfp.rate = 24.0;
+zfpCfg.zfp.chunkStates = 32768;
+zfpCfg.zfp.gateCacheSlots = 16;
+QuantumRegister qreg_zfp(n, zfpCfg);
 
 // Apply quantum gates
 qreg.applyHadamard(qubit);

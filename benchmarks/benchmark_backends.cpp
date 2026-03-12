@@ -105,6 +105,35 @@ BenchmarkResult benchmarkBloscWorkflow(unsigned int iterations) {
 	};
 }
 
+BenchmarkResult benchmarkZfpWorkflow(unsigned int iterations) {
+	tmfqs::RegisterConfig cfg;
+	cfg.strategy = tmfqs::StorageStrategyKind::Zfp;
+	cfg.zfp.mode = tmfqs::ZfpCompressionMode::FixedRate;
+	cfg.zfp.rate = 24.0;
+	tmfqs::QuantumRegister reg(12, 0, cfg);
+	tmfqs::QuantumGate toffoli = tmfqs::QuantumGate::Toffoli();
+	tmfqs::Mt19937RandomSource rng(123456u);
+	for(unsigned int q = 0; q < reg.qubitCount(); ++q) {
+		reg.applyHadamard(q);
+	}
+
+	const auto start = Clock::now();
+	for(unsigned int i = 0; i < iterations; ++i) {
+		const tmfqs::QubitIndex q0 = (i + 1u) % reg.qubitCount();
+		const tmfqs::QubitIndex q1 = (i + 6u) % reg.qubitCount();
+		reg.applyControlledNot(q0, q1);
+		reg.applyGate(toffoli, tmfqs::QubitList{0, 1, 2});
+		(void)reg.measure(rng);
+	}
+	const auto end = Clock::now();
+
+	return {
+		"Zfp gate+block+measure workflow",
+		std::chrono::duration<double>(end - start).count(),
+		iterations
+	};
+}
+
 } // namespace
 
 int main() {
@@ -116,6 +145,12 @@ int main() {
 		printResult(benchmarkBloscWorkflow(160));
 	} else {
 		std::cout << "Blosc gate+block+measure workflow           skipped (Blosc unavailable)\n";
+	}
+
+	if(tmfqs::isStrategyAvailable(tmfqs::StorageStrategyKind::Zfp)) {
+		printResult(benchmarkZfpWorkflow(160));
+	} else {
+		std::cout << "Zfp gate+block+measure workflow             skipped (zfp unavailable)\n";
 	}
 	return 0;
 }

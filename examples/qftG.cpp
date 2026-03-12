@@ -25,6 +25,16 @@ static bool parseUnsigned(const char *text, unsigned int &valueOut) {
 	return true;
 }
 
+static bool parseDouble(const char *text, double &valueOut) {
+	char *end = nullptr;
+	const double value = std::strtod(text, &end);
+	if(text == end || *end != '\0') {
+		return false;
+	}
+	valueOut = value;
+	return true;
+}
+
 static StateList sanitizeStates(const StateList &input, unsigned int totalStates) {
 	StateList states;
 	for(unsigned int state : input) {
@@ -50,12 +60,21 @@ static StateList chooseInputStates(unsigned int totalStates) {
 static tmfqs::StorageStrategyKind parseStrategy(const std::string &value) {
 	if(value == "dense") return tmfqs::StorageStrategyKind::Dense;
 	if(value == "blosc") return tmfqs::StorageStrategyKind::Blosc;
+	if(value == "zfp") return tmfqs::StorageStrategyKind::Zfp;
 	if(value == "auto") return tmfqs::StorageStrategyKind::Auto;
 	throw std::invalid_argument("Unknown strategy: " + value);
 }
 
+static tmfqs::ZfpCompressionMode parseZfpMode(const std::string &value) {
+	if(value == "rate") return tmfqs::ZfpCompressionMode::FixedRate;
+	if(value == "precision") return tmfqs::ZfpCompressionMode::FixedPrecision;
+	if(value == "accuracy") return tmfqs::ZfpCompressionMode::FixedAccuracy;
+	throw std::invalid_argument("Unknown zfp mode: " + value);
+}
+
 static void printUsage() {
-	std::cout << "Usage: ./qftG <num_qubits> [--strategy dense|blosc|auto] [--chunk-states N] [--cache-slots N] [--clevel N] [--nthreads N] [--threshold-mb N]\n";
+	std::cout
+		<< "Usage: ./qftG <num_qubits> [--strategy dense|blosc|zfp|auto] [--chunk-states N] [--cache-slots N] [--clevel N] [--nthreads N] [--threshold-mb N] [--zfp-mode rate|precision|accuracy] [--zfp-rate R] [--zfp-precision B] [--zfp-accuracy A] [--zfp-chunk-states N] [--zfp-cache-slots N]\n";
 }
 
 static bool parseArgs(int argc, char *argv[], CliOptions &optionsOut) {
@@ -108,6 +127,41 @@ static bool parseArgs(int argc, char *argv[], CliOptions &optionsOut) {
 			unsigned int value = 0;
 			if(i + 1 >= argc || !parseUnsigned(argv[++i], value)) return false;
 			optionsOut.registerConfig.autoThresholdBytes = static_cast<size_t>(value) * 1024u * 1024u;
+			continue;
+		}
+		if(arg == "--zfp-mode") {
+			if(i + 1 >= argc) return false;
+			optionsOut.registerConfig.zfp.mode = parseZfpMode(argv[++i]);
+			continue;
+		}
+		if(arg == "--zfp-rate") {
+			double value = 0.0;
+			if(i + 1 >= argc || !parseDouble(argv[++i], value) || value <= 0.0) return false;
+			optionsOut.registerConfig.zfp.rate = value;
+			continue;
+		}
+		if(arg == "--zfp-precision") {
+			unsigned int value = 0;
+			if(i + 1 >= argc || !parseUnsigned(argv[++i], value) || value == 0u) return false;
+			optionsOut.registerConfig.zfp.precision = value;
+			continue;
+		}
+		if(arg == "--zfp-accuracy") {
+			double value = 0.0;
+			if(i + 1 >= argc || !parseDouble(argv[++i], value) || value <= 0.0) return false;
+			optionsOut.registerConfig.zfp.accuracy = value;
+			continue;
+		}
+		if(arg == "--zfp-chunk-states") {
+			unsigned int value = 0;
+			if(i + 1 >= argc || !parseUnsigned(argv[++i], value) || value == 0u) return false;
+			optionsOut.registerConfig.zfp.chunkStates = value;
+			continue;
+		}
+		if(arg == "--zfp-cache-slots") {
+			unsigned int value = 0;
+			if(i + 1 >= argc || !parseUnsigned(argv[++i], value) || value == 0u) return false;
+			optionsOut.registerConfig.zfp.gateCacheSlots = value;
 			continue;
 		}
 		std::cout << "Unknown option: " << arg << "\n";

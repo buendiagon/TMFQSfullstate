@@ -15,7 +15,8 @@ SOURCES = tmfqs/register/quantum_register.cpp \
           tmfqs/algorithms/grover.cpp \
           tmfqs/storage/StateBackendFactory.cpp \
           tmfqs/storage/DenseStateBackend.cpp \
-          tmfqs/storage/BloscStateBackend.cpp
+          tmfqs/storage/BloscStateBackend.cpp \
+          tmfqs/storage/ZfpStateBackend.cpp
 TARGET_LIB = libtmfqsfs.so
 INSTALLDIR = ../lib64
 INCS = -I ./ -I ../include
@@ -24,6 +25,11 @@ LIBS =
 ifneq ($(wildcard /usr/include/blosc2.h),)
 CXXFLAGS += -DHAVE_BLOSC2
 LIBS += -lblosc2
+endif
+
+ifneq ($(wildcard /usr/include/zfp.h),)
+CXXFLAGS += -DHAVE_ZFP
+LIBS += -lzfp
 endif
 
 CXXFLAGS += -fPIC -std=c++17 -Wall -Wextra $(INCS)
