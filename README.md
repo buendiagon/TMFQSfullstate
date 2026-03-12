@@ -1,431 +1,318 @@
-# TMFQSFS - Quantum Simulator
+# TMFQS
 
-<p align="center">
-  <strong>A lightweight quantum computing simulator written in C++17</strong>
-</p>
+TMFQS is a C++17 state-vector quantum simulator for learning, experimentation, and backend strategy research. It provides a shared library (`libtmfqsfs.so`), public C++ headers (`tmfqsfs.h`), example binaries, integration tests, and backend benchmarking tools.
 
----
+## What You Get
 
-## 📋 Table of Contents
-
-- [Overview](#overview)
-- [Features](#features)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Performance Profiling (psrecord)](#performance-profiling-psrecord)
-- [API Reference](#api-reference)
-- [Examples](#examples)
-- [Project Structure](#project-structure)
-- [License](#license)
-
----
-
-## Overview
-
-**TMFQSFS** (Too Many Fancy Quantum Simulator For Science) is a quantum computing simulator that provides a framework for simulating quantum registers, quantum gates, and quantum algorithms. It uses state vector simulation to represent quantum states and supports common quantum operations.
-
-The simulator is designed for:
-- Educational purposes and learning quantum computing concepts
-- Prototyping and testing quantum algorithms
-- Research in quantum computing fundamentals
-
----
-
-## Features
-
-### Quantum Register
-- Create registers with arbitrary number of qubits
-- Initialize registers to specific basis states
-- Query amplitudes and probabilities
-- Print state vectors
-
-### Quantum Gates
-| Single-Qubit Gates | Multi-Qubit Gates |
-|-------------------|-------------------|
-| Hadamard (H) | Controlled-NOT (CNOT) |
-| Pauli-X, Y, Z | Controlled Phase Shift |
-| Phase Shift | Toffoli (CCNOT) |
-| T Gate (π/8) | SWAP |
-| Identity | Ising |
-
-### Quantum Algorithms
-- **Quantum Fourier Transform (QFT)** - Transforms computational basis to Fourier basis
-- **Grover's Search Algorithm** - Searches for marked states with quadratic speedup
-
----
+- A C++ shared library built from `src/` and installed to `lib64/libtmfqsfs.so`
+- Public API headers under `include/` with umbrella include `tmfqsfs.h`
+- Example programs in `examples/` compiled into `bin/`
+- Integration test suites in `tests/integration/`
+- Runtime-selectable storage backends: Dense, Blosc, ZFP, and Auto
+- Benchmark tools in `benchmarks/` for backend performance and regression checks
 
 ## Requirements
 
-- **Compiler**: Intel oneAPI `icpx` (preferred, auto-detected) or `g++` with C++17 support
-- **OS**: Linux (tested on Fedora)
-- **Build**: GNU Make
-- **Optional dependencies**:
-  - Blosc2 (`libblosc2`) for chunked compressed storage strategy
-  - zfp (`libzfp`) for lossy fixed-rate/fixed-precision/fixed-accuracy compression strategy
+This repository is currently documented for Linux only (verified workflow).
 
----
+- Compiler: Intel oneAPI `icpx` (auto-detected if available) or `g++` with C++17 support
+- Build tool: GNU Make
+- Runtime: shared-library loading via `LD_LIBRARY_PATH`
+- Optional backend dependencies:
+  - Blosc2 (`blosc2.h`, `libblosc2`) to enable the Blosc backend
+  - ZFP (`zfp.h`, `libzfp`) to enable the ZFP backend
 
-## Installation
+If optional headers are not found during build, the corresponding backend is not compiled in.
 
-### Clone the Repository
+## Quickstart
 
 ```bash
 git clone https://github.com/diaztoro/TMFQS.git
 cd TMFQS
-```
 
-### Build
-
-```bash
-# Clean previous builds (optional)
-make clean
-
-# Build the library and examples
 make
-
-# Build integration tests (optional)
 make tests
 
-```
-
-This will:
-1. Compile the shared library `libtmfqsfs.so` in `lib64/`
-2. Compile all example programs in `bin/`
-3. Enable Blosc runtime strategy automatically if `blosc2.h` is available on the system
-4. Enable zfp runtime strategy automatically if `zfp.h` is available on the system
-
-### Verify Installation
-
-```bash
-export LD_LIBRARY_PATH="$PWD/lib64:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$PWD/lib64:${LD_LIBRARY_PATH}"
 ./bin/grover 3 5
 ```
 
-Expected output: Grover's algorithm finding state |5⟩ with high probability.
-
----
+Expected result: the program runs Grover search for state `|5>` in a 3-qubit space and prints the measured state.
 
 ## Usage
 
-### Environment Setup
-
-Before running any program, set the library path:
+Before running binaries from `bin/`, export the library path once per shell session:
 
 ```bash
-export LD_LIBRARY_PATH="/path/to/QSTest/lib64:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$PWD/lib64:${LD_LIBRARY_PATH}"
 ```
 
-### Running Programs
+### Binary Quick Reference
 
-#### Quantum Fourier Transform
 ```bash
 ./bin/qft <num_qubits> <initial_state>
-
-# Example: QFT on 3 qubits starting from |0⟩
-./bin/qft 3 0
-```
-
-#### Grover's Search Algorithm
-```bash
 ./bin/grover <num_qubits> <marked_state>
-
-# Example: Search for |5⟩ in a 3-qubit system
-./bin/grover 3 5
-
-# Example: Search for |11⟩ in a 4-qubit system
-./bin/grover 4 11
-```
-
-#### Applying Individual Gates
-```bash
-./bin/applyHadamard <num_qubits> <target_qubit>
+./bin/applyHadamard <num_qubits> <qubit> <init_state>
 ./bin/applyControlledNot <num_qubits> <control_qubit> <target_qubit>
-./bin/applyControlledPhaseShift <num_qubits> <control> <target> <theta>
+./bin/applyControlledPhaseShift <num_qubits> <control_qubit> <target_qubit> <init_state>
+./bin/getSumOfProbabilities <num_qubits>
+./bin/qftG <num_qubits> [options]
 ```
 
-#### QFTG With Runtime Storage Strategy
+### Example Commands
+
 ```bash
-./bin/qftG <num_qubits> [--strategy dense|blosc|zfp|auto] [--chunk-states N] [--cache-slots N] [--clevel N] [--nthreads N] [--threshold-mb N] [--zfp-mode rate|precision|accuracy] [--zfp-rate R] [--zfp-precision B] [--zfp-accuracy A] [--zfp-chunk-states N] [--zfp-cache-slots N]
+./bin/qft 3 0
+./bin/grover 4 11
+./bin/applyHadamard 3 1 0
+./bin/applyControlledNot 3 0 2
+./bin/applyControlledPhaseShift 3 0 2 0
+./bin/getSumOfProbabilities 5
+```
 
-# Example: force Dense
+## `qftG` CLI Reference
+
+Usage:
+
+```bash
+./bin/qftG <num_qubits> [--strategy dense|blosc|zfp|auto] \
+  [--chunk-states N] [--cache-slots N] [--clevel N] [--nthreads N] \
+  [--threshold-mb N] [--zfp-mode rate|precision|accuracy] [--zfp-rate R] \
+  [--zfp-precision B] [--zfp-accuracy A] [--zfp-chunk-states N] \
+  [--zfp-cache-slots N]
+```
+
+
+| Option                 | Meaning                                                             |
+| ---------------------- | ------------------------------------------------------------------- |
+| `--strategy dense`     | blosc                                                               |
+| `--chunk-states N`     | Blosc: basis states per compressed chunk.                           |
+| `--cache-slots N`      | Blosc: decompressed chunk cache slots used during gate application. |
+| `--clevel N`           | Blosc compression level (typically `0..9`).                         |
+| `--nthreads N`         | Blosc thread count.                                                 |
+| `--threshold-mb N`     | Auto strategy dense/compressed cutoff in MB (`autoThresholdBytes`). |
+| `--zfp-mode rate`      | precision                                                           |
+| `--zfp-rate R`         | ZFP fixed-rate target (bits/value).                                 |
+| `--zfp-precision B`    | ZFP fixed-precision target (bits).                                  |
+| `--zfp-accuracy A`     | ZFP fixed-accuracy absolute error target.                           |
+| `--zfp-chunk-states N` | ZFP: basis states per compressed chunk.                             |
+| `--zfp-cache-slots N`  | ZFP: decompressed chunk cache slots used during gate application.   |
+
+
+Examples:
+
+```bash
 ./bin/qftG 22 --strategy dense
-
-# Example: force Blosc
-./bin/qftG 22 --strategy blosc --chunk-states 16384 --clevel 1
-
-# Example: force zfp with fixed-rate lossy compression
-./bin/qftG 22 --strategy zfp --zfp-rate 24
-
-# Example: zfp tuning (chunk size and cache)
-./bin/qftG 22 --strategy zfp --zfp-rate 24 --zfp-chunk-states 32768 --zfp-cache-slots 16
-
-# Tip: lower memory -> smaller cache/chunks, higher speed -> larger cache/chunks
-# ./bin/qftG 22 --strategy zfp --zfp-rate 24 --zfp-chunk-states 65536 --zfp-cache-slots 64
-
-# Example: auto-select by threshold
+./bin/qftG 22 --strategy blosc --chunk-states 16384 --clevel 1 --nthreads 2
+./bin/qftG 22 --strategy zfp --zfp-mode rate --zfp-rate 24 --zfp-chunk-states 32768
 ./bin/qftG 22 --strategy auto --threshold-mb 8
 ```
 
----
+## Backend Strategies
 
-## Performance Profiling (psrecord)
+TMFQS can store amplitudes with different runtime backends:
 
-`qftG` now keeps algorithm logic only. For execution time and RAM graphs, use external profiling with `psrecord`.
+- Dense:
+  - In-memory uncompressed amplitude storage
+  - Lowest overhead for smaller registers
+- Blosc:
+  - Chunked compressed storage using Blosc2
+  - Requires build-time Blosc availability
+- ZFP:
+  - Chunked compressed storage with fixed-rate/precision/accuracy modes
+  - Requires build-time ZFP availability
+- Auto:
+  - Chooses Dense for small states
+  - For larger states, prefers Blosc if available, otherwise ZFP if available, otherwise Dense
+  - Uses `RegisterConfig::autoThresholdBytes` (exposed in CLI as `--threshold-mb`)
 
-### Install on Rocky Linux
+If an unavailable backend is explicitly requested, construction fails with a runtime error.
 
-```bash
-sudo dnf install -y python3 python3-pip
-python3 -m venv .venv-prof
-source .venv-prof/bin/activate
-python -m pip install --upgrade pip
-python -m pip install "psrecord[plot]"
-```
+## C++ API Usage
 
-### Generate PNG timeline (CPU + RAM vs time)
-
-```bash
-mkdir -p profiling
-psrecord "./bin/qftG 20" \
-  --interval 0.02 \
-  --plot profiling/qftG_20_timeline.png \
-  --log profiling/qftG_20_timeline.log
-```
-
-Output files:
-- `profiling/qftG_20_timeline.png`: timeline graph
-- `profiling/qftG_20_timeline.log`: sampled raw data
-
-### Benchmark Regression Guard (5%)
-
-```bash
-# Generate baseline and candidate CSVs
-LD_LIBRARY_PATH=./lib64:$LD_LIBRARY_PATH ./bin/benchmark_backends --csv /tmp/baseline.csv
-LD_LIBRARY_PATH=./lib64:$LD_LIBRARY_PATH ./bin/benchmark_backends --csv /tmp/candidate.csv
-
-# Fail if any metric regresses by more than 5%
-./bin/benchmark_regression_check /tmp/baseline.csv /tmp/candidate.csv 0.05
-```
-
----
-
-## API Reference
-
-### QuantumRegister Class
+### 1. Basic `QuantumRegister` Flow
 
 ```cpp
 #include "tmfqsfs.h"
-using namespace tmfqs;
-
-// Create a register with n qubits (initialized to |0⟩)
-QuantumRegister qreg(n);
-
-// Create a register initialized to a specific state
-QuantumRegister qreg(n, initial_state);
-
-// Create with explicit storage strategy
-RegisterConfig cfg;
-cfg.strategy = StorageStrategyKind::Blosc;
-cfg.blosc.chunkStates = 16384;
-cfg.blosc.gateCacheSlots = 8;
-QuantumRegister qreg_compressed(n, cfg);
-
-RegisterConfig zfpCfg;
-zfpCfg.strategy = StorageStrategyKind::Zfp;
-zfpCfg.zfp.mode = ZfpCompressionMode::FixedRate;
-zfpCfg.zfp.rate = 24.0;
-zfpCfg.zfp.chunkStates = 32768;
-zfpCfg.zfp.gateCacheSlots = 16;
-QuantumRegister qreg_zfp(n, zfpCfg);
-
-// Apply quantum gates
-qreg.applyHadamard(qubit);
-qreg.applyControlledNot(control, target);
-qreg.applyControlledPhaseShift(control, target, theta);
-qreg.applySwap(qubit1, qubit2);
-
-// Query state
-Amplitude amp = qreg.amplitude(state);
-double prob = qreg.probability(state);
-double total = qreg.totalProbability();  // Should equal 1.0
-Mt19937RandomSource rng;
-unsigned int sampled = qreg.measure(rng);
-size_t elemCount = qreg.amplitudeElementCount();
-
-// Display
-qreg.printStatesVector();        // default epsilon = 1e-12
-qreg.printStatesVector(1e-9);   // custom epsilon
-```
-
-### QuantumGate Class
-
-```cpp
-// Create standard gates
-QuantumGate H = QuantumGate::Hadamard();
-QuantumGate X = QuantumGate::PauliX();
-QuantumGate CNOT = QuantumGate::ControlledNot();
-QuantumGate I = QuantumGate::Identity(dimension);
-
-// Gate operations
-QuantumGate result = gate1 * gate2;  // Matrix multiplication
-QuantumGate scaled = gate * scalar;  // Scalar multiplication
-
-// Apply arbitrary gate to register
-QubitList qubits = {0, 1};  // Target qubits
-qreg.applyGate(gate, qubits);
-```
-
-### Quantum Algorithms
-
-```cpp
-#include "tmfqsfs.h"
-using namespace tmfqs;
-
-// Quantum Fourier Transform
-QuantumRegister qreg(n, initial_state);
-algorithms::qftInPlace(qreg);
-
-// Grover's Search (returns measured state)
-algorithms::GroverConfig cfg{marked_state, num_qubits, verbose};
-Mt19937RandomSource rng(12345u);
-unsigned int result = algorithms::groverSearch(cfg, rng);
-```
-
----
-
-## Examples
-
-### Example 1: Creating a Bell State
-
-```cpp
-#include "tmfqsfs.h"
-#include <iostream>
 
 int main() {
     using namespace tmfqs;
-    // Create |00⟩
-    QuantumRegister qreg(2, 0);
-    
-    // Apply H to qubit 0: (|0⟩ + |1⟩)/√2 ⊗ |0⟩
-    qreg.applyHadamard(0);
-    
-    // Apply CNOT: (|00⟩ + |11⟩)/√2
-    qreg.applyControlledNot(0, 1);
-    
-    std::cout << "Bell State |Φ+⟩:" << std::endl;
-    qreg.printStatesVector();
-    
+
+    QuantumRegister reg(3, 0);      // |000>
+    reg.applyHadamard(0);
+    reg.applyControlledNot(0, 1);
+
+    Amplitude a0 = reg.amplitude(0);
+    double p0 = reg.probability(0);
+    double total = reg.totalProbability();
+
+    (void)a0;
+    (void)p0;
+    (void)total;
     return 0;
 }
 ```
 
-### Example 2: Grover's Algorithm
+### 2. Algorithms: QFT and Grover
 
 ```cpp
 #include "tmfqsfs.h"
-#include <iostream>
 
 int main() {
     using namespace tmfqs;
-    unsigned int target = 5;   // State to find
-    unsigned int qubits = 3;   // 2^3 = 8 possible states
-    algorithms::GroverConfig cfg{target, qubits, true};
-    Mt19937RandomSource rng;
-    
-    unsigned int result = algorithms::groverSearch(cfg, rng);
-    
-    std::cout << "Found: " << result << std::endl;
-    std::cout << "Expected: " << target << std::endl;
-    
+
+    QuantumRegister qftReg(3, 0);
+    algorithms::qftInPlace(qftReg);
+
+    algorithms::GroverConfig cfg{5u, 3u, false};
+    Mt19937RandomSource rng(12345u);
+    StateIndex measured = algorithms::groverSearch(cfg, rng);
+
+    (void)measured;
     return 0;
 }
 ```
 
-### Compiling Your Own Programs
+### 3. Backend Selection with `RegisterConfig`
+
+```cpp
+#include "tmfqsfs.h"
+
+int main() {
+    using namespace tmfqs;
+
+    RegisterConfig denseCfg;
+    denseCfg.strategy = StorageStrategyKind::Dense;
+    QuantumRegister denseReg(22, denseCfg);
+
+    RegisterConfig bloscCfg;
+    bloscCfg.strategy = StorageStrategyKind::Blosc;
+    bloscCfg.blosc.chunkStates = 16384;
+    bloscCfg.blosc.gateCacheSlots = 8;
+    bloscCfg.blosc.clevel = 1;
+    QuantumRegister bloscReg(22, bloscCfg);
+
+    RegisterConfig zfpCfg;
+    zfpCfg.strategy = StorageStrategyKind::Zfp;
+    zfpCfg.zfp.mode = ZfpCompressionMode::FixedRate;
+    zfpCfg.zfp.rate = 24.0;
+    zfpCfg.zfp.chunkStates = 32768;
+    zfpCfg.zfp.gateCacheSlots = 16;
+    QuantumRegister zfpReg(22, zfpCfg);
+
+    (void)denseReg;
+    (void)bloscReg;
+    (void)zfpReg;
+    return 0;
+}
+```
+
+### Compile and Link Your Own Program
 
 ```bash
-# Compile
-icpx -std=c++17 -I /path/to/QSTest/include -L /path/to/QSTest/lib64 -ltmfqsfs myprogram.cpp -o myprogram
+icpx -std=c++17 my_program.cpp \
+  -I ./include \
+  -L ./lib64 -ltmfqsfs \
+  -o my_program
 
-# Run
-export LD_LIBRARY_PATH="/path/to/QSTest/lib64:$LD_LIBRARY_PATH"
-./myprogram
+export LD_LIBRARY_PATH="$PWD/lib64:${LD_LIBRARY_PATH}"
+./my_program
 ```
 
----
+## Build, Test, and Benchmark Workflow
 
-## Project Structure
+All commands below run from repository root.
 
+### Build Library + Examples
+
+```bash
+make
 ```
-QSTest/
-├── include/
-│   ├── tmfqsfs.h             # Umbrella public header
-│   └── tmfqs/
-│       ├── algorithms/       # qftInPlace, groverSearch, operation model
-│       ├── config/           # RegisterConfig and storage strategy config
-│       ├── core/             # Types, constants, random, math, validation
-│       ├── gates/            # QuantumGate
-│       ├── register/         # QuantumRegister facade
-│       └── storage/          # common + dense + blosc + zfp + factory
-├── src/
-│   ├── tmfqs/
-│   │   ├── algorithms/
-│   │   ├── core/
-│   │   ├── gates/
-│   │   ├── register/
-│   │   └── storage/          # layered backend implementation
-│   └── Makefile
-├── examples/                 # Example programs
-│   ├── qft.cpp
-│   ├── grover.cpp
-│   ├── applyHadamard.cpp
-│   └── ...
-├── tests/
-│   └── integration/          # split suites: algorithms/register/storage
-├── benchmarks/
-│   ├── benchmark_backends.cpp
-│   └── benchmark_regression_check.cpp
-├── build/                    # Generated build artifacts (.o/.d)
-├── bin/                      # Compiled binaries
-├── lib64/                    # Shared library
-│   └── libtmfqsfs.so
-├── Makefile                  # Main build file
-├── LICENSE
+
+Build output highlights:
+
+- Shared library at `lib64/libtmfqsfs.so`
+- Example binaries in `bin/`
+
+### Run Integration Tests
+
+```bash
+make tests
+```
+
+This compiles and runs integration suites:
+
+- `test_algorithms`
+- `test_register_validation`
+- `test_storage_parity`
+- `test_storage_cache`
+
+### Run Benchmarks
+
+```bash
+make benchmarks
+```
+
+This builds and runs `benchmark_backends`.
+
+### Performance-Oriented Build + Checks
+
+```bash
+make perf
+```
+
+This rebuilds with optimized flags and runs tests and benchmarks.
+
+### Sanitizer Build + Tests
+
+```bash
+make sanitize
+```
+
+This rebuilds with AddressSanitizer and UndefinedBehaviorSanitizer and runs tests.
+
+## Performance Notes
+
+- State-vector simulation grows exponentially with qubit count (`2^n` amplitudes).
+- Dense backend is typically best for smaller registers due to lower compression overhead.
+- Compressed backends (Blosc/ZFP) trade CPU for memory footprint and may help at larger register sizes.
+- Benchmark sources are in `benchmarks/`, with utilities:
+  - `benchmark_backends`
+  - `benchmark_regression_check`
+- Existing profiling artifacts are under `profiling/`.
+
+## Project Layout
+
+```text
+TMFQS/
+├── include/            # Public headers (tmfqsfs.h + tmfqs/*)
+├── src/                # Library implementation
+├── examples/           # Example programs -> bin/
+├── tests/              # Integration tests
+├── benchmarks/         # Benchmark sources and make targets
+├── bin/                # Built binaries
+├── build/              # Build artifacts
+├── lib64/              # Shared library output
+├── Makefile            # Top-level build/test/benchmark targets
 └── README.md
 ```
 
----
+## Limitations
 
-## Technical Notes
-
-### State Vector Representation
-
-Quantum states are stored as a vector of complex amplitudes:
-- For `n` qubits, the state vector has `2^n` complex entries
-- Each amplitude is stored as `{real, imag}` pairs
-- Memory usage: `2^(n+1) * sizeof(double)` bytes
-
-### Limitations
-
-- **Scalability**: Memory grows exponentially with qubit count
-- **Maximum qubits**: Practical limit ~25-30 qubits depending on available RAM
-- **No noise simulation**: Ideal quantum operations only
-
----
+- State-vector memory scales exponentially with qubits.
+- Practical qubit limits depend on available RAM and selected backend strategy.
+- Simulation models ideal operations; no noise/error model is included.
+- Linux workflow is the only one currently documented and verified.
 
 ## License
 
-This project is licensed under the terms specified in the [LICENSE](LICENSE) file.
+Licensed under the terms in [LICENSE](LICENSE).
 
----
+## Author
 
-## Authors
+Gilberto Javier Díaz Toro
 
-- **Gilberto Javier Díaz Toro** - *Initial development*
+## Contributors
 
----
+Daniel Adrián González Buendía
 
-## Acknowledgments
-
-- The quantum computing research community
