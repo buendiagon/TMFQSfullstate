@@ -5,14 +5,14 @@
 #include <iosfwd>
 #include <memory>
 
+#include "tmfqs/config/register_config.h"
 #include "tmfqs/core/types.h"
 #include "tmfqs/gates/quantum_gate.h"
-#include "tmfqs/storage/i_state_backend.h"
-#include "tmfqs/storage/state_backend_factory.h"
 
 namespace tmfqs {
 
 class IRandomSource;
+class IStateBackend;
 
 class QuantumRegister {
 	public:

@@ -1,9 +1,12 @@
 #include "tmfqsfs.h"
 
 #include <chrono>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -22,6 +25,17 @@ void printResult(const BenchmarkResult &result) {
 	std::cout << std::left << std::setw(42) << result.name
 	          << "  " << std::fixed << std::setprecision(4) << result.seconds << " s"
 	          << "  (" << std::setprecision(1) << iterPerSecond << " it/s)\n";
+}
+
+void writeCsv(const std::string &path, const std::vector<BenchmarkResult> &results) {
+	std::ofstream out(path);
+	if(!out.is_open()) {
+		throw std::runtime_error("Failed to open benchmark CSV output: " + path);
+	}
+	out << "name,seconds,iterations\n";
+	for(const BenchmarkResult &result : results) {
+		out << result.name << "," << result.seconds << "," << result.iterations << "\n";
+	}
 }
 
 BenchmarkResult benchmarkDenseKernelPath(unsigned int iterations) {
@@ -136,21 +150,46 @@ BenchmarkResult benchmarkZfpWorkflow(unsigned int iterations) {
 
 } // namespace
 
-int main() {
-	std::cout << "=== TMFQS backend benchmarks (O3, NDEBUG) ===\n";
-	printResult(benchmarkDenseKernelPath(2000));
-	printResult(benchmarkBlockApplyPath(1000));
+int main(int argc, char *argv[]) {
+	std::string csvOutputPath;
+	for(int i = 1; i < argc; ++i) {
+		const std::string arg = argv[i];
+		if(arg == "--csv") {
+			if(i + 1 >= argc) {
+				std::cerr << "Missing value for --csv\n";
+				return 2;
+			}
+			csvOutputPath = argv[++i];
+			continue;
+		}
+		std::cerr << "Unknown option: " << arg << "\n";
+		return 2;
+	}
 
-	if(tmfqs::isStrategyAvailable(tmfqs::StorageStrategyKind::Blosc)) {
-		printResult(benchmarkBloscWorkflow(160));
+	std::vector<BenchmarkResult> results;
+	std::cout << "=== TMFQS backend benchmarks (O3, NDEBUG) ===\n";
+	results.push_back(benchmarkDenseKernelPath(2000));
+	results.push_back(benchmarkBlockApplyPath(1000));
+	printResult(results[0]);
+	printResult(results[1]);
+
+	if(tmfqs::StorageStrategyRegistry::isAvailable(tmfqs::StorageStrategyKind::Blosc)) {
+		results.push_back(benchmarkBloscWorkflow(160));
+		printResult(results.back());
 	} else {
 		std::cout << "Blosc gate+block+measure workflow           skipped (Blosc unavailable)\n";
 	}
 
-	if(tmfqs::isStrategyAvailable(tmfqs::StorageStrategyKind::Zfp)) {
-		printResult(benchmarkZfpWorkflow(160));
+	if(tmfqs::StorageStrategyRegistry::isAvailable(tmfqs::StorageStrategyKind::Zfp)) {
+		results.push_back(benchmarkZfpWorkflow(160));
+		printResult(results.back());
 	} else {
 		std::cout << "Zfp gate+block+measure workflow             skipped (zfp unavailable)\n";
+	}
+
+	if(!csvOutputPath.empty()) {
+		writeCsv(csvOutputPath, results);
+		std::cout << "Wrote benchmark CSV: " << csvOutputPath << "\n";
 	}
 	return 0;
 }

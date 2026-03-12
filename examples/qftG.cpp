@@ -210,7 +210,7 @@ int main(int argc, char *argv[]) {
 	} catch(const std::exception &ex) {
 		std::cout << "qftG error: " << ex.what() << "\n";
 		std::cout << "Available strategies: ";
-		auto names = tmfqs::listAvailableStrategies();
+		auto names = tmfqs::StorageStrategyRegistry::listAvailable();
 		for(size_t i = 0; i < names.size(); ++i) {
 			std::cout << names[i];
 			if(i + 1 < names.size()) std::cout << ", ";

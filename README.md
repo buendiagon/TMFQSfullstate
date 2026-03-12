@@ -197,6 +197,17 @@ Output files:
 - `profiling/qftG_20_timeline.png`: timeline graph
 - `profiling/qftG_20_timeline.log`: sampled raw data
 
+### Benchmark Regression Guard (5%)
+
+```bash
+# Generate baseline and candidate CSVs
+LD_LIBRARY_PATH=./lib64:$LD_LIBRARY_PATH ./bin/benchmark_backends --csv /tmp/baseline.csv
+LD_LIBRARY_PATH=./lib64:$LD_LIBRARY_PATH ./bin/benchmark_backends --csv /tmp/candidate.csv
+
+# Fail if any metric regresses by more than 5%
+./bin/benchmark_regression_check /tmp/baseline.csv /tmp/candidate.csv 0.05
+```
+
 ---
 
 ## API Reference
@@ -352,17 +363,18 @@ QSTest/
 │   ├── tmfqsfs.h             # Umbrella public header
 │   └── tmfqs/
 │       ├── algorithms/       # qftInPlace, groverSearch, operation model
+│       ├── config/           # RegisterConfig and storage strategy config
 │       ├── core/             # Types, constants, random, math, validation
 │       ├── gates/            # QuantumGate
 │       ├── register/         # QuantumRegister facade
-│       └── storage/          # Backend interfaces and factory
+│       └── storage/          # common + dense + blosc + zfp + factory
 ├── src/
 │   ├── tmfqs/
 │   │   ├── algorithms/
 │   │   ├── core/
 │   │   ├── gates/
 │   │   ├── register/
-│   │   └── storage/
+│   │   └── storage/          # layered backend implementation
 │   └── Makefile
 ├── examples/                 # Example programs
 │   ├── qft.cpp
@@ -370,8 +382,11 @@ QSTest/
 │   ├── applyHadamard.cpp
 │   └── ...
 ├── tests/
-│   └── integration/
-│       └── test_bugfixes.cpp
+│   └── integration/          # split suites: algorithms/register/storage
+├── benchmarks/
+│   ├── benchmark_backends.cpp
+│   └── benchmark_regression_check.cpp
+├── build/                    # Generated build artifacts (.o/.d)
 ├── bin/                      # Compiled binaries
 ├── lib64/                    # Shared library
 │   └── libtmfqsfs.so

@@ -1,26 +1,34 @@
 #ifndef TMFQS_STORAGE_STATE_BACKEND_FACTORY_H
 #define TMFQS_STORAGE_STATE_BACKEND_FACTORY_H
 
-#include <memory>
-#include <string>
-#include <vector>
-
-#include "tmfqs/core/types.h"
-#include "tmfqs/storage/i_state_backend.h"
+#include "tmfqs/storage/factory/state_backend_factory.h"
+#include "tmfqs/storage/factory/storage_strategy_registry.h"
 
 namespace tmfqs {
 
-struct BackendSelection {
-	StorageStrategyKind strategy = StorageStrategyKind::Dense;
-	std::unique_ptr<IStateBackend> backend;
-};
+inline StorageStrategyKind resolveStorageStrategy(unsigned int numQubits, const RegisterConfig &cfg) {
+	return StorageStrategyRegistry::resolve(numQubits, cfg);
+}
 
-StorageStrategyKind resolveStorageStrategy(unsigned int numQubits, const RegisterConfig &cfg);
-BackendSelection createBackendSelection(unsigned int numQubits, const RegisterConfig &cfg);
-std::unique_ptr<IStateBackend> createBackend(unsigned int numQubits, const RegisterConfig &cfg);
-bool isStrategyAvailable(StorageStrategyKind kind);
-std::vector<std::string> listAvailableStrategies();
-std::string storageStrategyToString(StorageStrategyKind kind);
+inline BackendSelection createBackendSelection(unsigned int numQubits, const RegisterConfig &cfg) {
+	return StateBackendFactory::createSelection(numQubits, cfg);
+}
+
+inline std::unique_ptr<IStateBackend> createBackend(unsigned int numQubits, const RegisterConfig &cfg) {
+	return StateBackendFactory::create(numQubits, cfg);
+}
+
+inline bool isStrategyAvailable(StorageStrategyKind kind) {
+	return StorageStrategyRegistry::isAvailable(kind);
+}
+
+inline std::vector<std::string> listAvailableStrategies() {
+	return StorageStrategyRegistry::listAvailable();
+}
+
+inline std::string storageStrategyToString(StorageStrategyKind kind) {
+	return StorageStrategyRegistry::toString(kind);
+}
 
 } // namespace tmfqs
 

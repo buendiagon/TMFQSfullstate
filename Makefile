@@ -30,14 +30,6 @@ sanitize:
 	$(MAKE) -C tests sanitize
 
 clean:
-	rm -f examples/*.d
-	rm -f examples/*.o
-	rm -f src/*.d
-	rm -f src/*.o
-	rm -f src/tmfqs/core/*.d src/tmfqs/core/*.o
-	rm -f src/tmfqs/gates/*.d src/tmfqs/gates/*.o
-	rm -f src/tmfqs/register/*.d src/tmfqs/register/*.o
-	rm -f src/tmfqs/algorithms/*.d src/tmfqs/algorithms/*.o
-	rm -f src/tmfqs/storage/*.d src/tmfqs/storage/*.o
+	rm -rf build
 	$(MAKE) clean -C benchmarks
 	$(MAKE) clean -C tests

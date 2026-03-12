@@ -5,21 +5,24 @@ else
 CXX := g++
 endif
 endif
-CXXFLAGS = -c -std=c++17 -Wall -Wextra
+CXXFLAGS = -std=c++17 -Wall -Wextra
 INCS = -I ../include -I ./
 LIBS = -L ../lib64 -l tmfqsfs
 DEBUG_FLAGS =
+BUILDDIR = ../build/examples
+OBJDIR = $(BUILDDIR)/obj
 
 PROGRAMS = applyHadamard applyControlledPhaseShift applyControlledNot qft qftG grover getSumOfProbabilities
-OBJECTS = $(addsuffix .o,$(PROGRAMS))
+OBJECTS = $(addprefix $(OBJDIR)/,$(addsuffix .o,$(PROGRAMS)))
 
 all: $(PROGRAMS)
 
-$(PROGRAMS): %: %.o
+$(PROGRAMS): %: $(OBJDIR)/%.o
 	$(CXX) $(DEBUG_FLAGS) $< $(LIBS) -o ../bin/$@
 
-%.o: %.cpp
-	$(CXX) $(INCS) $(CXXFLAGS) $< -o $@
+$(OBJDIR)/%.o: %.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(INCS) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -f *.o
+	rm -rf $(BUILDDIR)

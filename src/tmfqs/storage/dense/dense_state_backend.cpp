@@ -1,4 +1,4 @@
-#include "tmfqs/storage/i_state_backend.h"
+#include "tmfqs/storage/dense/dense_state_backend.h"
 
 #include <algorithm>
 #include <cmath>
@@ -8,12 +8,15 @@
 #include <utility>
 #include <vector>
 
-#include "backend_common.h"
 #include "tmfqs/core/state_space.h"
+#include "tmfqs/storage/common/backend_validation.h"
+#include "tmfqs/storage/common/gate_apply_engine.h"
+#include "tmfqs/storage/common/pair_kernel_executor.h"
 
 namespace tmfqs {
+namespace {
 
-class DenseStateBackend : public IStateBackend {
+class DenseStateBackend final : public IStateBackend {
 	private:
 		unsigned int numQubits_ = 0;
 		unsigned int numStates_ = 0;
@@ -21,21 +24,21 @@ class DenseStateBackend : public IStateBackend {
 		GateBlockWorkspace gateWorkspace_;
 
 		void ensureInitialized(const char *operation) const {
-			ensureBackendInitialized(numStates_ > 0 && !amplitudes_.empty(), "DenseStateBackend", operation);
+			storage::ensureBackendInitialized(numStates_ > 0 && !amplitudes_.empty(), "DenseStateBackend", operation);
 		}
 
 		void validateState(StateIndex state, const char *scopeName) const {
-			validateBackendStateIndex(scopeName, state, numStates_);
+			storage::validateBackendStateIndex(scopeName, state, numStates_);
 		}
 
 		void validateSingleQubitOperation(QubitIndex qubit, const char *scopeName) const {
 			ensureInitialized(scopeName);
-			validateBackendSingleQubit(scopeName, qubit, numQubits_);
+			storage::validateBackendSingleQubit(scopeName, qubit, numQubits_);
 		}
 
 		void validateTwoQubitOperation(QubitIndex q0, QubitIndex q1, const char *scopeName) const {
 			ensureInitialized(scopeName);
-			validateBackendTwoQubits(scopeName, q0, q1, numQubits_);
+			storage::validateBackendTwoQubits(scopeName, q0, q1, numQubits_);
 		}
 
 	public:
@@ -46,7 +49,7 @@ class DenseStateBackend : public IStateBackend {
 		}
 
 		DenseStateBackend(const DenseStateBackend &) = default;
-		DenseStateBackend& operator=(const DenseStateBackend &) = default;
+		DenseStateBackend &operator=(const DenseStateBackend &) = default;
 
 		std::unique_ptr<IStateBackend> clone() const override {
 			return std::make_unique<DenseStateBackend>(*this);
@@ -183,65 +186,64 @@ class DenseStateBackend : public IStateBackend {
 			}
 		}
 
-			void applyHadamard(QubitIndex qubit) override {
-				validateSingleQubitOperation(qubit, "DenseStateBackend::applyHadamard");
-				const unsigned int targetMask = qubitMaskFromMsbIndex(qubit, numQubits_);
-				const double invSqrt2 = 1.0 / std::sqrt(2.0);
+		void applyHadamard(QubitIndex qubit) override {
+			validateSingleQubitOperation(qubit, "DenseStateBackend::applyHadamard");
+			const unsigned int targetMask = storage::qubitMaskFromMsbIndex(qubit, numQubits_);
+			const double invSqrt2 = 1.0 / std::sqrt(2.0);
 
-				forEachStatePairByMask(numStates_, targetMask, [&](unsigned int state0, unsigned int state1) {
-					const size_t i0 = static_cast<size_t>(state0) * 2u;
-					const size_t i1 = static_cast<size_t>(state1) * 2u;
-					const double aReal = amplitudes_[i0];
-					const double aImag = amplitudes_[i0 + 1u];
-					const double bReal = amplitudes_[i1];
-					const double bImag = amplitudes_[i1 + 1u];
+			storage::PairKernelExecutor::runFallback(numStates_, targetMask, [&](unsigned int state0, unsigned int state1) {
+				const size_t i0 = static_cast<size_t>(state0) * 2u;
+				const size_t i1 = static_cast<size_t>(state1) * 2u;
+				const double aReal = amplitudes_[i0];
+				const double aImag = amplitudes_[i0 + 1u];
+				const double bReal = amplitudes_[i1];
+				const double bImag = amplitudes_[i1 + 1u];
+				amplitudes_[i0] = (aReal + bReal) * invSqrt2;
+				amplitudes_[i0 + 1u] = (aImag + bImag) * invSqrt2;
+				amplitudes_[i1] = (aReal - bReal) * invSqrt2;
+				amplitudes_[i1 + 1u] = (aImag - bImag) * invSqrt2;
+			});
+		}
 
-					amplitudes_[i0] = (aReal + bReal) * invSqrt2;
-					amplitudes_[i0 + 1u] = (aImag + bImag) * invSqrt2;
-					amplitudes_[i1] = (aReal - bReal) * invSqrt2;
-					amplitudes_[i1 + 1u] = (aImag - bImag) * invSqrt2;
-				});
-			}
+		void applyPauliX(QubitIndex qubit) override {
+			validateSingleQubitOperation(qubit, "DenseStateBackend::applyPauliX");
+			const unsigned int targetMask = storage::qubitMaskFromMsbIndex(qubit, numQubits_);
+			storage::PairKernelExecutor::runFallback(numStates_, targetMask, [&](unsigned int state0, unsigned int state1) {
+				const size_t i0 = static_cast<size_t>(state0) * 2u;
+				const size_t i1 = static_cast<size_t>(state1) * 2u;
+				std::swap(amplitudes_[i0], amplitudes_[i1]);
+				std::swap(amplitudes_[i0 + 1u], amplitudes_[i1 + 1u]);
+			});
+		}
 
-			void applyPauliX(QubitIndex qubit) override {
-				validateSingleQubitOperation(qubit, "DenseStateBackend::applyPauliX");
-				const unsigned int targetMask = qubitMaskFromMsbIndex(qubit, numQubits_);
-				forEachStatePairByMask(numStates_, targetMask, [&](unsigned int state0, unsigned int state1) {
-					const size_t i0 = static_cast<size_t>(state0) * 2u;
-					const size_t i1 = static_cast<size_t>(state1) * 2u;
-					std::swap(amplitudes_[i0], amplitudes_[i1]);
-					std::swap(amplitudes_[i0 + 1u], amplitudes_[i1 + 1u]);
-				});
-			}
+		void applyControlledPhaseShift(QubitIndex controlQubit, QubitIndex targetQubit, double theta) override {
+			validateTwoQubitOperation(controlQubit, targetQubit, "DenseStateBackend::applyControlledPhaseShift");
+			const unsigned int controlMask = storage::qubitMaskFromMsbIndex(controlQubit, numQubits_);
+			const unsigned int targetMask = storage::qubitMaskFromMsbIndex(targetQubit, numQubits_);
+			const double phaseReal = std::cos(theta);
+			const double phaseImag = std::sin(theta);
+			storage::PairKernelExecutor::runFallback(numStates_, targetMask, [&](unsigned int, unsigned int state1) {
+				if((state1 & controlMask) == 0u) return;
+				const size_t idx = static_cast<size_t>(state1) * 2u;
+				const double real = amplitudes_[idx];
+				const double imag = amplitudes_[idx + 1u];
+				amplitudes_[idx] = phaseReal * real - phaseImag * imag;
+				amplitudes_[idx + 1u] = phaseReal * imag + phaseImag * real;
+			});
+		}
 
-			void applyControlledPhaseShift(QubitIndex controlQubit, QubitIndex targetQubit, double theta) override {
-				validateTwoQubitOperation(controlQubit, targetQubit, "DenseStateBackend::applyControlledPhaseShift");
-				const unsigned int controlMask = qubitMaskFromMsbIndex(controlQubit, numQubits_);
-				const unsigned int targetMask = qubitMaskFromMsbIndex(targetQubit, numQubits_);
-				const double phaseReal = std::cos(theta);
-				const double phaseImag = std::sin(theta);
-				forEachStatePairByMask(numStates_, targetMask, [&](unsigned int, unsigned int state1) {
-					if((state1 & controlMask) == 0u) return;
-					const size_t idx = static_cast<size_t>(state1) * 2u;
-					const double real = amplitudes_[idx];
-					const double imag = amplitudes_[idx + 1u];
-					amplitudes_[idx] = phaseReal * real - phaseImag * imag;
-					amplitudes_[idx + 1u] = phaseReal * imag + phaseImag * real;
-				});
-			}
-
-			void applyControlledNot(QubitIndex controlQubit, QubitIndex targetQubit) override {
-				validateTwoQubitOperation(controlQubit, targetQubit, "DenseStateBackend::applyControlledNot");
-				const unsigned int controlMask = qubitMaskFromMsbIndex(controlQubit, numQubits_);
-				const unsigned int targetMask = qubitMaskFromMsbIndex(targetQubit, numQubits_);
-				forEachStatePairByMask(numStates_, targetMask, [&](unsigned int state0, unsigned int state1) {
-					if((state0 & controlMask) == 0u) return;
-					const size_t i0 = static_cast<size_t>(state0) * 2u;
-					const size_t i1 = static_cast<size_t>(state1) * 2u;
-					std::swap(amplitudes_[i0], amplitudes_[i1]);
-					std::swap(amplitudes_[i0 + 1u], amplitudes_[i1 + 1u]);
-				});
-			}
+		void applyControlledNot(QubitIndex controlQubit, QubitIndex targetQubit) override {
+			validateTwoQubitOperation(controlQubit, targetQubit, "DenseStateBackend::applyControlledNot");
+			const unsigned int controlMask = storage::qubitMaskFromMsbIndex(controlQubit, numQubits_);
+			const unsigned int targetMask = storage::qubitMaskFromMsbIndex(targetQubit, numQubits_);
+			storage::PairKernelExecutor::runFallback(numStates_, targetMask, [&](unsigned int state0, unsigned int state1) {
+				if((state0 & controlMask) == 0u) return;
+				const size_t i0 = static_cast<size_t>(state0) * 2u;
+				const size_t i1 = static_cast<size_t>(state1) * 2u;
+				std::swap(amplitudes_[i0], amplitudes_[i1]);
+				std::swap(amplitudes_[i0 + 1u], amplitudes_[i1 + 1u]);
+			});
+		}
 
 		void applyGate(const QuantumGate &gate, const QubitList &qubits) override {
 			ensureInitialized("gate application");
@@ -252,7 +254,7 @@ class DenseStateBackend : public IStateBackend {
 				amplitudes_[state * 2] = amp.real;
 				amplitudes_[state * 2 + 1] = amp.imag;
 			};
-			applyGateThroughBlocks(
+			storage::GateApplyEngine::apply(
 				"DenseStateBackend::applyGate",
 				gate,
 				qubits,
@@ -263,8 +265,9 @@ class DenseStateBackend : public IStateBackend {
 		}
 };
 
-std::unique_ptr<IStateBackend> createDenseBackend(unsigned int numQubits, const RegisterConfig &) {
-	(void)numQubits;
+} // namespace
+
+std::unique_ptr<IStateBackend> createDenseStateBackend(const RegisterConfig &) {
 	return std::make_unique<DenseStateBackend>();
 }
 

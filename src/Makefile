@@ -13,14 +13,22 @@ SOURCES = tmfqs/register/quantum_register.cpp \
           tmfqs/algorithms/operations.cpp \
           tmfqs/algorithms/qft.cpp \
           tmfqs/algorithms/grover.cpp \
-          tmfqs/storage/StateBackendFactory.cpp \
-          tmfqs/storage/DenseStateBackend.cpp \
-          tmfqs/storage/BloscStateBackend.cpp \
-          tmfqs/storage/ZfpStateBackend.cpp
+          tmfqs/storage/factory/state_backend_factory.cpp \
+          tmfqs/storage/factory/storage_strategy_registry.cpp \
+          tmfqs/storage/dense/dense_state_backend.cpp \
+          tmfqs/storage/blosc/blosc_codec.cpp \
+          tmfqs/storage/blosc/blosc_state_backend.cpp \
+          tmfqs/storage/zfp/zfp_codec.cpp \
+          tmfqs/storage/zfp/zfp_state_backend.cpp
 TARGET_LIB = libtmfqsfs.so
 INSTALLDIR = ../lib64
 INCS = -I ./ -I ../include
 LIBS =
+BUILDDIR = ../build/src
+OBJDIR = $(BUILDDIR)/obj
+DEPDIR = $(BUILDDIR)/dep
+OBJECTS = $(addprefix $(OBJDIR)/,$(SOURCES:.cpp=.o))
+DEPS = $(addprefix $(DEPDIR)/,$(SOURCES:.cpp=.d))
 
 ifneq ($(wildcard /usr/include/blosc2.h),)
 CXXFLAGS += -DHAVE_BLOSC2
@@ -34,16 +42,16 @@ endif
 
 CXXFLAGS += -fPIC -std=c++17 -Wall -Wextra $(INCS)
 CXXFLAGS += $(EXTRA_CXXFLAGS)
-CLEANEXTS = o so
 
 .PHONY: all
 all: $(TARGET_LIB)
 
-$(TARGET_LIB): $(subst .cpp,.o,$(SOURCES))
+$(TARGET_LIB): $(OBJECTS)
 	$(CXX) -shared -fPIC $(LDFLAGS) $(EXTRA_LDFLAGS) -o $@ $^ $(LIBS)
 
-%.o: %.cpp
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+$(OBJDIR)/%.o: %.cpp
+	@mkdir -p $(dir $@) $(dir $(DEPDIR)/$*.d)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -MF $(DEPDIR)/$*.d -c $< -o $@
 
 .PHONY: install
 install:
@@ -52,10 +60,7 @@ install:
 
 .PHONY: clean
 clean:
-	for file in $(CLEANEXTS); do rm -f *.$$file; done
-	rm -f tmfqs/*/*.o tmfqs/*/*.d
+	rm -rf $(BUILDDIR)
+	rm -f $(TARGET_LIB)
 
-include $(subst .cpp,.d,$(SOURCES))
-
-%.d: %.cpp
-	$(CXX) -M $(CPPFLAGS) $(INCS) $< > $@.$$$$; sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; rm -f $@.$$$$
+-include $(DEPS)

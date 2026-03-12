@@ -8,6 +8,8 @@
 #include "tmfqs/core/random.h"
 #include "tmfqs/core/state_space.h"
 #include "tmfqs/core/validation.h"
+#include "tmfqs/storage/factory/state_backend_factory.h"
+#include "tmfqs/storage/i_state_backend.h"
 
 namespace tmfqs {
 namespace {
@@ -22,7 +24,7 @@ QuantumRegister::QuantumRegister() {
 void QuantumRegister::initializeBackend(unsigned int qubits) {
 	numQubits_ = qubits;
 	numStates_ = checkedStateCount(numQubits_);
-	BackendSelection selection = createBackendSelection(numQubits_, config_);
+	BackendSelection selection = StateBackendFactory::createSelection(numQubits_, config_);
 	resolvedStrategy_ = selection.strategy;
 	backend_ = std::move(selection.backend);
 }
