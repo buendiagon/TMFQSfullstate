@@ -1,43 +1,66 @@
-CXX = icpx
+ifneq ($(filter default undefined,$(origin CXX)),)
+ifneq ($(shell command -v icpx 2>/dev/null),)
+CXX := icpx
+else
+CXX := g++
+endif
+endif
 
-# Specify the source files, the target files, 
-# and the install directory 
-SOURCES  = quantumRegister.cpp quantumGate.cpp quantumAlgorithms.cpp utils.cpp 
+SOURCES = tmfqs/register/quantum_register.cpp \
+          tmfqs/gates/quantum_gate.cpp \
+          tmfqs/core/math.cpp \
+          tmfqs/core/random.cpp \
+          tmfqs/algorithms/operations.cpp \
+          tmfqs/algorithms/qft.cpp \
+          tmfqs/algorithms/grover.cpp \
+          tmfqs/storage/factory/state_backend_factory.cpp \
+          tmfqs/storage/factory/storage_strategy_registry.cpp \
+          tmfqs/storage/dense/dense_state_backend.cpp \
+          tmfqs/storage/blosc/blosc_codec.cpp \
+          tmfqs/storage/blosc/blosc_state_backend.cpp \
+          tmfqs/storage/zfp/zfp_codec.cpp \
+          tmfqs/storage/zfp/zfp_state_backend.cpp
 TARGET_LIB = libtmfqsfs.so
-INSTALLDIR  = ../lib64
-#INCS  = -I /usr/local/zfp/include
-#LIBS = -L /usr/local/zfp/lib64 -lzfp -lstdc++
-INCS  = -I ./ -I ../include
-LIBS =  
-CXXFLAGS += -fPIC -std=c++17 -Wall -Wextra $(INCS) $(LIBS)
+INSTALLDIR = ../lib64
+INCS = -I ./ -I ../include
+LIBS =
+BUILDDIR = ../build/src
+OBJDIR = $(BUILDDIR)/obj
+DEPDIR = $(BUILDDIR)/dep
+OBJECTS = $(addprefix $(OBJDIR)/,$(SOURCES:.cpp=.o))
+DEPS = $(addprefix $(DEPDIR)/,$(SOURCES:.cpp=.d))
 
-# Specify extensions of files to delete when cleaning
-CLEANEXTS   = o so
+ifneq ($(wildcard /usr/include/blosc2.h),)
+CXXFLAGS += -DHAVE_BLOSC2
+LIBS += -lblosc2
+endif
 
+ifneq ($(wildcard /usr/include/zfp.h),)
+CXXFLAGS += -DHAVE_ZFP
+LIBS += -lzfp
+endif
+
+CXXFLAGS += -fPIC -std=c++17 -Wall -Wextra $(INCS)
+CXXFLAGS += $(EXTRA_CXXFLAGS)
 
 .PHONY: all
 all: $(TARGET_LIB)
 
-# Build lib*.so from all the *.o;
-# subst is the search-and-replace 
-# function demonstrated in Recipe 1.16
-$(TARGET_LIB): $(subst .cpp,.o,$(SOURCES)) 
-	$(CXX) -shared -fPIC $(LDFLAGS) -o $@ $^
+$(TARGET_LIB): $(OBJECTS)
+	$(CXX) -shared -fPIC $(LDFLAGS) $(EXTRA_LDFLAGS) -o $@ $^ $(LIBS)
 
-%.o: %.cpp
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $<
+$(OBJDIR)/%.o: %.cpp
+	@mkdir -p $(dir $@) $(dir $(DEPDIR)/$*.d)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -MF $(DEPDIR)/$*.d -c $< -o $@
 
 .PHONY: install
 install:
 	mkdir -p $(INSTALLDIR)
 	cp -p $(TARGET_LIB) $(INSTALLDIR)
 
-.PHONY: clean 
+.PHONY: clean
 clean:
-	for file in $(CLEANEXTS); do rm -f *.$$file; done
+	rm -rf $(BUILDDIR)
+	rm -f $(TARGET_LIB)
 
-# Generate dependencies of .ccp files on .hpp files
-include $(subst .cpp,.d,$(SOURCES))
-
-%.d: %.cpp
-	$(CXX) -M $(CPPFLAGS) $(INCS) $< > $@.$$$$; sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; rm -f $@.$$$$
+-include $(DEPS)

@@ -42,3 +42,15 @@ chatgpt
 
 # Vim files
 .*.swp
+
+# python venv
+.venv-prof
+.venv
+.venv-dev
+.venv-test
+.venv-prod
+.venv-staging
+.venv-dev
+.venv-test
+.venv-prod
+.venv-staging

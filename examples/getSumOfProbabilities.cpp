@@ -1,30 +1,21 @@
 #include "tmfqsfs.h"
-#include <stdlib.h>
+
+#include <cstdlib>
 #include <iostream>
 
-
-using namespace std;
-
-//TMFQS
-int main(int argc, char *argv[]){
-
-	if(argc != 2){
-		cout << "./applyHadamard <Number of Qubits>" << endl;
+int main(int argc, char *argv[]) {
+	using namespace tmfqs;
+	if(argc != 2) {
+		std::cout << "./getSumOfProbabilities <num_qubits>\n";
 		return 1;
 	}
-   else{
-		int i, j;
-		unsigned int numberOfQubits, qubit;
-		numberOfQubits = atoi(argv[1]);
 
-		QuantumRegister qreg(numberOfQubits);
-		for(int i=0; i<numberOfQubits; i++){
-			qreg.Hadamard(i);
-		}
-		qreg.printStatesVector();
-		std::cout << qreg.probabilitySumatory() << std::endl;
-
-
-		return 0;
+	const unsigned int numQubits = static_cast<unsigned int>(std::atoi(argv[1]));
+	QuantumRegister registerState(numQubits);
+	for(unsigned int i = 0; i < numQubits; ++i) {
+		registerState.applyHadamard(i);
 	}
+	registerState.printStatesVector();
+	std::cout << registerState.totalProbability() << "\n";
+	return 0;
 }

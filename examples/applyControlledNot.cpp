@@ -1,32 +1,24 @@
 #include "tmfqsfs.h"
-#include <stdlib.h>
+
+#include <cstdlib>
 #include <iostream>
 
-
-using namespace std;
-
-//TMFQS
-int main(int argc, char *argv[]){
-
-	if(argc != 4){
-		cout << "./applyHadamard <Number of Qubits> <controlQubit> <targetQubit>" << endl;
+int main(int argc, char *argv[]) {
+	using namespace tmfqs;
+	if(argc != 4) {
+		std::cout << "./applyControlledNot <num_qubits> <control_qubit> <target_qubit>\n";
 		return 1;
 	}
-   else{
-		int i, j;
-		unsigned int numberOfQubits, targetQubit, controlQubit;
-		numberOfQubits = atoi(argv[1]);
-		controlQubit = atoi(argv[2]);
-		targetQubit = atoi(argv[3]);
 
-		QuantumRegister qureg(numberOfQubits);
-		for(int i=0; i<numberOfQubits; i++){
-			qureg.Hadamard(i);
-		}
-		qureg.ControlledNot(controlQubit,targetQubit);
-		qureg.printStatesVector();
+	const unsigned int numQubits = static_cast<unsigned int>(std::atoi(argv[1]));
+	const unsigned int controlQubit = static_cast<unsigned int>(std::atoi(argv[2]));
+	const unsigned int targetQubit = static_cast<unsigned int>(std::atoi(argv[3]));
 
-
-		return 0;
+	QuantumRegister registerState(numQubits);
+	for(unsigned int i = 0; i < numQubits; ++i) {
+		registerState.applyHadamard(i);
 	}
+	registerState.applyControlledNot(controlQubit, targetQubit);
+	registerState.printStatesVector();
+	return 0;
 }

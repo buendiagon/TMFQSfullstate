@@ -1,38 +1,22 @@
 #include "tmfqsfs.h"
-#include <stdlib.h>
+
+#include <cstdlib>
 #include <iostream>
 
-
-using namespace std;
-
-//TMFQS
-int main(int argc, char *argv[]){
-
-	if(argc != 5){
-		cout << "./applyControlledPhaseShift <Number of Qubits> <controlQubit> <targetQubit> <initState>" << endl;
+int main(int argc, char *argv[]) {
+	using namespace tmfqs;
+	if(argc != 5) {
+		std::cout << "./applyControlledPhaseShift <num_qubits> <control_qubit> <target_qubit> <init_state>\n";
 		return 1;
 	}
-   else{
-		int i, j;
-		unsigned int numQubits = 0, controlQubit, targetQubit, initState;
-		numQubits = atoi(argv[1]);
-		controlQubit = atoi(argv[2]);
-      targetQubit = atoi(argv[3]);
-		initState = atoi(argv[4]);
 
-		/*
-		qreg.printStatesVector();
-		for(int i=0; i<numQubits; i++){
-			qreg.Hadamard(i);
-		}
-		*/
-		QuantumRegister qreg(numQubits, initState);
-		qreg.ControlledPhaseShift(controlQubit, targetQubit, pi/double(1 << 2));
-		qreg.printStatesVector();
-		//qreg.Hadamard(qubit);
-		//qreg.printStatesVector();
+	const unsigned int numQubits = static_cast<unsigned int>(std::atoi(argv[1]));
+	const unsigned int controlQubit = static_cast<unsigned int>(std::atoi(argv[2]));
+	const unsigned int targetQubit = static_cast<unsigned int>(std::atoi(argv[3]));
+	const unsigned int initState = static_cast<unsigned int>(std::atoi(argv[4]));
 
-
-		return 0;
-	}
+	QuantumRegister registerState(numQubits, initState);
+	registerState.applyControlledPhaseShift(controlQubit, targetQubit, kPi / 4.0);
+	registerState.printStatesVector();
+	return 0;
 }

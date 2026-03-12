@@ -1,30 +1,18 @@
 #include "tmfqsfs.h"
-#include <stdlib.h>
+
+#include <cstdlib>
 #include <iostream>
-#include "utils.h"
 
-
-using namespace std;
-
-//TMFQS
 int main(int argc, char *argv[]) {
-
-	if(argc != 3)  {
-		cout << "./qft <Number of Qubits> <initialState>" << endl;
+	using namespace tmfqs;
+	if(argc != 3) {
+		std::cout << "./qft <num_qubits> <initial_state>\n";
 		return 1;
-	} else {
-		int i, j;
-
-		unsigned int numberOfQubits = 0, initState = 0;
-		numberOfQubits = atoi(argv[1]);
-		initState = atoi(argv[2]);
-		QuantumRegister qureg(numberOfQubits, initState);
-
-		//cout << endl << "Initial amplitudes" << endl;
-		//qureg.printStatesVector();
-		quatumFourierTransform(&qureg);
-		//qureg.printStatesVector();
-
-		return 0;
 	}
+
+	const unsigned int numQubits = static_cast<unsigned int>(std::atoi(argv[1]));
+	const unsigned int initState = static_cast<unsigned int>(std::atoi(argv[2]));
+	QuantumRegister registerState(numQubits, initState);
+	algorithms::qftInPlace(registerState);
+	return 0;
 }
