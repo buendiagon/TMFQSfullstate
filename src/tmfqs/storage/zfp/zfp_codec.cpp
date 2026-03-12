@@ -12,6 +12,7 @@
 namespace tmfqs {
 namespace storage {
 
+/** @brief Validates ZFP-related configuration fields. */
 void ZfpCodec::validateConfig(const RegisterConfig &cfg) {
 	if(!std::isfinite(cfg.zfp.rate) || cfg.zfp.rate <= 0.0) {
 		throw std::invalid_argument("ZfpCodec: rate must be a finite value > 0");
@@ -30,10 +31,12 @@ void ZfpCodec::validateConfig(const RegisterConfig &cfg) {
 	}
 }
 
+/** @brief Constructs codec and validates runtime configuration. */
 ZfpCodec::ZfpCodec(const RegisterConfig &cfg) : cfg_(cfg) {
 	validateConfig(cfg_);
 }
 
+/** @brief Compresses one dense amplitude chunk into a byte buffer. */
 void ZfpCodec::compress(const double *data, size_t elemCount, std::vector<uint8_t> &out) {
 #ifndef HAVE_ZFP
 	(void)data;
@@ -45,16 +48,19 @@ void ZfpCodec::compress(const double *data, size_t elemCount, std::vector<uint8_
 		throw std::invalid_argument("ZfpCodec: cannot compress empty buffer");
 	}
 
+	/** @brief RAII deleter for `zfp_field`. */
 	struct FieldDeleter {
 		void operator()(zfp_field *field) const noexcept {
 			if(field) zfp_field_free(field);
 		}
 	};
+	/** @brief RAII deleter for `zfp_stream`. */
 	struct StreamDeleter {
 		void operator()(zfp_stream *stream) const noexcept {
 			if(stream) zfp_stream_close(stream);
 		}
 	};
+	/** @brief RAII deleter for low-level bitstream handle. */
 	struct BitstreamDeleter {
 		void operator()(bitstream *stream) const noexcept {
 			if(stream) stream_close(stream);
@@ -108,6 +114,7 @@ void ZfpCodec::compress(const double *data, size_t elemCount, std::vector<uint8_
 
 	zfp_stream_set_bit_stream(stream.get(), bitstream.get());
 	zfp_stream_rewind(stream.get());
+	/** @brief `zfp_compress` returns 0 when compression fails. */
 	const size_t compressedSize = zfp_compress(stream.get(), field.get());
 	if(compressedSize == 0u) {
 		throw std::runtime_error("ZfpCodec: compression failed");
@@ -116,6 +123,7 @@ void ZfpCodec::compress(const double *data, size_t elemCount, std::vector<uint8_
 #endif
 }
 
+/** @brief Decompresses one chunk into a dense `double` buffer. */
 void ZfpCodec::decompress(const std::vector<uint8_t> &compressed, size_t elemCount, std::vector<double> &out) const {
 #ifndef HAVE_ZFP
 	(void)compressed;
@@ -131,16 +139,19 @@ void ZfpCodec::decompress(const std::vector<uint8_t> &compressed, size_t elemCou
 		out.resize(elemCount);
 	}
 
+	/** @brief RAII deleter for `zfp_field`. */
 	struct FieldDeleter {
 		void operator()(zfp_field *field) const noexcept {
 			if(field) zfp_field_free(field);
 		}
 	};
+	/** @brief RAII deleter for `zfp_stream`. */
 	struct StreamDeleter {
 		void operator()(zfp_stream *stream) const noexcept {
 			if(stream) zfp_stream_close(stream);
 		}
 	};
+	/** @brief RAII deleter for low-level bitstream handle. */
 	struct BitstreamDeleter {
 		void operator()(bitstream *stream) const noexcept {
 			if(stream) stream_close(stream);

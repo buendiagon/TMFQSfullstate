@@ -11,6 +11,12 @@
 namespace tmfqs {
 namespace algorithms {
 
+/**
+ * @brief Runs Grover's search procedure for a marked basis state.
+ *
+ * This routine prepares a uniform superposition, applies the oracle/diffusion
+ * pair for approximately the optimal number of iterations, and measures.
+ */
 StateIndex groverSearch(const GroverConfig &config, IRandomSource &randomSource) {
 	const unsigned int stateCount = checkedStateCount(config.numQubits);
 	if(config.markedState >= stateCount) {
@@ -28,6 +34,7 @@ StateIndex groverSearch(const GroverConfig &config, IRandomSource &randomSource)
 		InversionAboutMeanOp{}
 	};
 
+	// Integer floor keeps iteration count conservative to avoid over-rotation.
 	const double idealIterations = (kPi / 4.0) * std::sqrt(static_cast<double>(stateCount));
 	const unsigned int iterations = static_cast<unsigned int>(std::floor(idealIterations));
 	plan.addRepeatBlock(iterationOperations, iterations);

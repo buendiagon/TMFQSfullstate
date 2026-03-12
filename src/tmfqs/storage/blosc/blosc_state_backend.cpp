@@ -26,18 +26,24 @@ namespace {
 
 constexpr double kGateMatchTolerance = 1e-12;
 
+/**
+ * @brief Approximate floating-point comparison helper used in gate matching.
+ */
 bool approxEqual(double a, double b, double tol = kGateMatchTolerance) {
 	return std::abs(a - b) <= tol;
 }
 
+/** @brief Checks whether an amplitude matches target complex value within tolerance. */
 bool matchesAmplitude(const Amplitude &amp, double real, double imag = 0.0) {
 	return approxEqual(amp.real, real) && approxEqual(amp.imag, imag);
 }
 
+/** @brief Checks whether an amplitude is approximately zero. */
 bool isZeroAmplitude(const Amplitude &amp) {
 	return matchesAmplitude(amp, 0.0, 0.0);
 }
 
+/** @brief Detects canonical single-qubit Hadamard matrix. */
 bool matchesHadamardGate(const QuantumGate &gate) {
 	if(gate.dimension() != 2u) return false;
 	const double invSqrt2 = 1.0 / std::sqrt(2.0);
@@ -47,6 +53,7 @@ bool matchesHadamardGate(const QuantumGate &gate) {
 	       matchesAmplitude(gate[1][1], -invSqrt2);
 }
 
+/** @brief Detects canonical single-qubit Pauli-X matrix. */
 bool matchesPauliXGate(const QuantumGate &gate) {
 	if(gate.dimension() != 2u) return false;
 	return isZeroAmplitude(gate[0][0]) &&
@@ -55,6 +62,7 @@ bool matchesPauliXGate(const QuantumGate &gate) {
 	       isZeroAmplitude(gate[1][1]);
 }
 
+/** @brief Detects canonical two-qubit controlled-NOT matrix. */
 bool matchesControlledNotGate(const QuantumGate &gate) {
 	if(gate.dimension() != 4u) return false;
 	for(unsigned int row = 0; row < 4u; ++row) {
@@ -74,6 +82,7 @@ bool matchesControlledNotGate(const QuantumGate &gate) {
 	return true;
 }
 
+/** @brief Detects controlled phase-shift matrix and extracts phase angle. */
 bool matchControlledPhaseShiftGate(const QuantumGate &gate, double &thetaOut) {
 	if(gate.dimension() != 4u) return false;
 	for(unsigned int row = 0; row < 4u; ++row) {
@@ -95,6 +104,9 @@ bool matchControlledPhaseShiftGate(const QuantumGate &gate, double &thetaOut) {
 	return true;
 }
 
+/**
+ * @brief Blosc-backed state backend with chunk cache for decompressed working set.
+ */
 class BloscStateBackend final : public IStateBackend {
 	private:
 		enum class PairMutation : uint8_t {
@@ -109,40 +121,53 @@ class BloscStateBackend final : public IStateBackend {
 			double *amp = nullptr;
 		};
 
+		/** @brief Register and configuration metadata. */
 		unsigned int numQubits_ = 0;
 		unsigned int numStates_ = 0;
 		RegisterConfig cfg_;
+		/** @brief Compression/storage and chunk geometry state. */
 		storage::BloscCodec codec_;
 		storage::ChunkLayout layout_;
+		/** @brief Decompressed working-set cache used for mutations. */
 		storage::ChunkCache cache_;
+		/** @brief Scratch used for read-only access when a chunk is not cached. */
 		mutable std::vector<double> ioScratch_;
+		/** @brief Nesting depth for begin/end batch sections. */
 		unsigned int batchDepth_ = 0;
+		/** @brief Shared workspace for generic gate application. */
 		GateBlockWorkspace gateWorkspace_;
 
+		/** @brief Verifies that backend storage has been configured. */
 		void ensureInitialized(const char *operation) const {
 			storage::ensureBackendInitialized(codec_.hasStorage(), "BloscStateBackend", operation);
 		}
 
+		/** @brief Tests whether a pair operation modified the first amplitude. */
 		bool touchesFirst(PairMutation mutation) const {
 			return mutation == PairMutation::First || mutation == PairMutation::Both;
 		}
 
+		/** @brief Tests whether a pair operation modified the second amplitude. */
 		bool touchesSecond(PairMutation mutation) const {
 			return mutation == PairMutation::Second || mutation == PairMutation::Both;
 		}
 
+		/** @brief Returns element count stored in one chunk. */
 		size_t chunkElemCount(size_t chunkIndex) const {
 			return layout_.chunkElemCount(chunkIndex);
 		}
 
+		/** @brief Loads one chunk into a cache buffer. */
 		void loadChunk(size_t chunkIndex, std::vector<double> &buffer, size_t elemCount) {
 			codec_.readChunk(chunkIndex, buffer, elemCount);
 		}
 
+		/** @brief Stores one cache buffer back into compressed storage. */
 		void storeChunk(size_t chunkIndex, const std::vector<double> &buffer, size_t elemCount) {
 			codec_.writeChunk(chunkIndex, buffer, elemCount);
 		}
 
+		/** @brief Acquires writable cache slot for one chunk index. */
 		storage::ChunkCache::SlotHandle acquireChunk(size_t chunkIndex) {
 			return cache_.acquire(
 				chunkIndex,
@@ -151,12 +176,14 @@ class BloscStateBackend final : public IStateBackend {
 				[&](size_t index) { return chunkElemCount(index); });
 		}
 
+		/** @brief Resolves and acquires writable amplitude pointer for one state. */
 		CacheAmplitudeRef acquireAmplitudeRef(StateIndex state) {
 			const storage::ChunkRef ref = layout_.stateRef(state);
 			auto slot = acquireChunk(ref.chunkIndex);
 			return {slot, slot.data + ref.elemOffset};
 		}
 
+		/** @brief Returns read-only amplitude pointer (cache hit or scratch decode). */
 		const double *findAmplitudeData(StateIndex state) const {
 			const storage::ChunkRef ref = layout_.stateRef(state);
 			if(const std::vector<double> *buffer = cache_.findBuffer(ref.chunkIndex)) {
@@ -166,11 +193,13 @@ class BloscStateBackend final : public IStateBackend {
 			return ioScratch_.data() + ref.elemOffset;
 		}
 
+		/** @brief Reads amplitude through cache-backed mutable path. */
 		Amplitude readAmplitudeMutable(StateIndex state) {
 			CacheAmplitudeRef ref = acquireAmplitudeRef(state);
 			return {ref.amp[0], ref.amp[1]};
 		}
 
+		/** @brief Writes amplitude through cache-backed mutable path. */
 		void writeAmplitudeMutable(StateIndex state, Amplitude amp) {
 			CacheAmplitudeRef ref = acquireAmplitudeRef(state);
 			ref.amp[0] = amp.real;
@@ -178,18 +207,21 @@ class BloscStateBackend final : public IStateBackend {
 			*ref.slot.dirty = true;
 		}
 
+		/** @brief Flushes all dirty cache slots to compressed storage. */
 		void flushCache() {
 			cache_.flushAll(
 				[&](size_t index, const std::vector<double> &buffer, size_t elemCount) { storeChunk(index, buffer, elemCount); },
 				[&](size_t index) { return chunkElemCount(index); });
 		}
 
+		/** @brief Flushes cache only when not inside an operation batch. */
 		void flushCacheIfNeeded() {
 			if(batchDepth_ == 0u) {
 				flushCache();
 			}
 		}
 
+		/** @brief Configures chunk layout, codec storage, and cache topology. */
 		void configureStorage(unsigned int numQubits) {
 			numQubits_ = numQubits;
 			numStates_ = checkedStateCount(numQubits_);
@@ -200,7 +232,9 @@ class BloscStateBackend final : public IStateBackend {
 		}
 
 		template <typename PairFn>
+		/** @brief Iterates state pairs for one target bit using chunk-aware traversal. */
 		void runPairKernel(unsigned int targetMask, PairFn pairFn) {
+			// Select traversal that best matches chunk boundaries.
 			const storage::PairKernelMode mode = storage::PairKernelExecutor::selectMode(layout_, targetMask);
 			if(mode == storage::PairKernelMode::IntraChunk) {
 				size_t activeChunk = std::numeric_limits<size_t>::max();
@@ -259,28 +293,34 @@ class BloscStateBackend final : public IStateBackend {
 		}
 
 		template <typename MutateFn>
+		/** @brief Runs one mutating action and conditionally flushes writes. */
 		void mutate(const char *operation, MutateFn mutateFn) {
 			ensureInitialized(operation);
 			mutateFn();
+			// Outside batches, keep compressed storage immediately consistent.
 			flushCacheIfNeeded();
 		}
 
 	public:
+		/** @brief Constructs backend from register configuration. */
 		explicit BloscStateBackend(const RegisterConfig &cfg)
 			: cfg_(cfg), codec_(cfg_), cache_(cfg.blosc.gateCacheSlots, 1u) {}
 
 		BloscStateBackend(const BloscStateBackend &) = default;
 		BloscStateBackend &operator=(const BloscStateBackend &) = default;
 
+		/** @brief Clones backend including current compressed state. */
 		std::unique_ptr<IStateBackend> clone() const override {
 			return std::make_unique<BloscStateBackend>(*this);
 		}
 
+		/** @brief Opens an operation batch scope. */
 		void beginOperationBatch() override {
 			ensureInitialized("batch begin");
 			++batchDepth_;
 		}
 
+		/** @brief Closes an operation batch scope and flushes pending writes. */
 		void endOperationBatch() override {
 			if(batchDepth_ == 0u) {
 				throw std::logic_error("BloscStateBackend::endOperationBatch called without matching beginOperationBatch");
@@ -291,6 +331,7 @@ class BloscStateBackend final : public IStateBackend {
 			}
 		}
 
+		/** @brief Initializes backend to zero amplitudes. */
 		void initZero(unsigned int numQubits) override {
 			configureStorage(numQubits);
 			const size_t statesPerChunk = layout_.statesPerChunk();
@@ -302,12 +343,14 @@ class BloscStateBackend final : public IStateBackend {
 			}
 		}
 
+		/** @brief Initializes one basis state with custom amplitude. */
 		void initBasis(unsigned int numQubits, StateIndex initState, Amplitude amp) override {
 			initZero(numQubits);
 			storage::validateBackendStateIndex("BloscStateBackend::initBasis", initState, numStates_);
 			setAmplitude(initState, amp);
 		}
 
+		/** @brief Initializes equal superposition over selected basis states. */
 		void initUniformSuperposition(unsigned int numQubits, const BasisStateList &basisStates) override {
 			const unsigned int stateCount = checkedStateCount(numQubits);
 			std::vector<StateIndex> selected;
@@ -342,6 +385,7 @@ class BloscStateBackend final : public IStateBackend {
 			}
 		}
 
+		/** @brief Loads complete amplitude vector into compressed chunk storage. */
 		void loadAmplitudes(unsigned int numQubits, AmplitudesVector amplitudes) override {
 			const unsigned int stateCount = checkedStateCount(numQubits);
 			if(amplitudes.size() != checkedAmplitudeElementCount(numQubits)) {
@@ -358,6 +402,7 @@ class BloscStateBackend final : public IStateBackend {
 			}
 		}
 
+		/** @brief Reads one basis-state amplitude. */
 		Amplitude amplitude(StateIndex state) const override {
 			ensureInitialized("amplitude query");
 			storage::validateBackendStateIndex("BloscStateBackend::amplitude", state, numStates_);
@@ -365,6 +410,7 @@ class BloscStateBackend final : public IStateBackend {
 			return {ampData[0], ampData[1]};
 		}
 
+		/** @brief Writes one basis-state amplitude. */
 		void setAmplitude(StateIndex state, Amplitude amp) override {
 			mutate("state update", [&]() {
 				storage::validateBackendStateIndex("BloscStateBackend::setAmplitude", state, numStates_);
@@ -372,11 +418,13 @@ class BloscStateBackend final : public IStateBackend {
 			});
 		}
 
+		/** @brief Computes probability mass for one basis state. */
 		double probability(StateIndex state) const override {
 			const Amplitude amp = amplitude(state);
 			return amp.real * amp.real + amp.imag * amp.imag;
 		}
 
+		/** @brief Computes total probability mass across all basis states. */
 		double totalProbability() const override {
 			ensureInitialized("total probability query");
 			double sum = 0.0;
@@ -398,6 +446,7 @@ class BloscStateBackend final : public IStateBackend {
 			return sum;
 		}
 
+		/** @brief Samples one basis state using cumulative probability scan. */
 		StateIndex sampleMeasurement(double rnd) const override {
 			ensureInitialized("measurement");
 			if(rnd < 0.0 || rnd >= 1.0) {
@@ -430,6 +479,7 @@ class BloscStateBackend final : public IStateBackend {
 			throw std::runtime_error("BloscStateBackend::sampleMeasurement cumulative probability did not reach sample");
 		}
 
+		/** @brief Prints amplitudes above threshold epsilon. */
 		void printNonZeroStates(std::ostream &os, double epsilon) const override {
 			ensureInitialized("state printing");
 			if(epsilon < 0.0) {
@@ -459,6 +509,7 @@ class BloscStateBackend final : public IStateBackend {
 			}
 		}
 
+		/** @brief Applies phase flip to one basis state. */
 		void phaseFlipBasisState(StateIndex state) override {
 			mutate("basis-state phase flip", [&]() {
 				storage::validateBackendStateIndex("BloscStateBackend::phaseFlipBasisState", state, numStates_);
@@ -469,6 +520,7 @@ class BloscStateBackend final : public IStateBackend {
 			});
 		}
 
+		/** @brief Applies inversion-about-mean transform to all amplitudes. */
 		void inversionAboutMean() override {
 			mutate("inversion about mean", [&]() {
 				double sumReal = 0.0;
@@ -497,6 +549,7 @@ class BloscStateBackend final : public IStateBackend {
 			});
 		}
 
+		/** @brief Applies Hadamard gate to one qubit. */
 		void applyHadamard(QubitIndex qubit) override {
 			ensureInitialized("Hadamard");
 			storage::validateBackendSingleQubit("BloscStateBackend::applyHadamard", qubit, numQubits_);
@@ -520,6 +573,7 @@ class BloscStateBackend final : public IStateBackend {
 			});
 		}
 
+		/** @brief Applies Pauli-X gate to one qubit. */
 		void applyPauliX(QubitIndex qubit) override {
 			ensureInitialized("PauliX");
 			storage::validateBackendSingleQubit("BloscStateBackend::applyPauliX", qubit, numQubits_);
@@ -536,6 +590,7 @@ class BloscStateBackend final : public IStateBackend {
 			});
 		}
 
+		/** @brief Applies controlled phase-shift gate. */
 		void applyControlledPhaseShift(QubitIndex controlQubit, QubitIndex targetQubit, double theta) override {
 			ensureInitialized("controlled phase shift");
 			storage::validateBackendTwoQubits("BloscStateBackend::applyControlledPhaseShift", controlQubit, targetQubit, numQubits_);
@@ -560,6 +615,7 @@ class BloscStateBackend final : public IStateBackend {
 			});
 		}
 
+		/** @brief Applies controlled-NOT gate. */
 		void applyControlledNot(QubitIndex controlQubit, QubitIndex targetQubit) override {
 			ensureInitialized("controlled not");
 			storage::validateBackendTwoQubits("BloscStateBackend::applyControlledNot", controlQubit, targetQubit, numQubits_);
@@ -580,8 +636,10 @@ class BloscStateBackend final : public IStateBackend {
 			});
 		}
 
+		/** @brief Applies arbitrary gate matrix with optional fast-path specialization. */
 		void applyGate(const QuantumGate &gate, const QubitList &qubits) override {
 			ensureInitialized("gate application");
+			// Fast-path common gates to specialized pair kernels for lower overhead.
 			if(qubits.size() == 1u) {
 				if(matchesHadamardGate(gate)) {
 					applyHadamard(qubits[0]);
@@ -604,6 +662,7 @@ class BloscStateBackend final : public IStateBackend {
 			}
 
 			mutate("gate application", [&]() {
+				// Fallback for arbitrary gate matrices.
 				auto loadAmplitude = [&](StateIndex state) -> Amplitude { return readAmplitudeMutable(state); };
 				auto storeAmplitude = [&](StateIndex state, Amplitude amp) { writeAmplitudeMutable(state, amp); };
 				storage::GateApplyEngine::apply(
@@ -621,10 +680,12 @@ class BloscStateBackend final : public IStateBackend {
 } // namespace
 #endif
 
+/** @brief Reports whether Blosc backend support is available. */
 bool isBloscStateBackendAvailable() {
 	return storage::BloscCodec::available();
 }
 
+/** @brief Factory helper for creating a Blosc backend instance. */
 std::unique_ptr<IStateBackend> createBloscStateBackend(const RegisterConfig &cfg) {
 #ifdef HAVE_BLOSC2
 	return std::make_unique<BloscStateBackend>(cfg);

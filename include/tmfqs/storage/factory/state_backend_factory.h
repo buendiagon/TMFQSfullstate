@@ -8,9 +8,24 @@
 
 namespace tmfqs {
 
+/**
+ * @brief Thin facade for backend factory operations.
+ */
 class StateBackendFactory {
 	public:
+		/**
+		 * @brief Creates a backend for the effective strategy.
+		 * @param numQubits Register size.
+		 * @param cfg Register configuration.
+		 * @return Owning pointer to a backend instance.
+		 */
 		static std::unique_ptr<IStateBackend> create(unsigned int numQubits, const RegisterConfig &cfg);
+		/**
+		 * @brief Creates backend and returns the resolved strategy metadata.
+		 * @param numQubits Register size.
+		 * @param cfg Register configuration.
+		 * @return Backend selection object.
+		 */
 		static BackendSelection createSelection(unsigned int numQubits, const RegisterConfig &cfg);
 };
 

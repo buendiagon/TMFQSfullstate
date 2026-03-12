@@ -10,12 +10,14 @@
 
 namespace tmfqs {
 
+/** @brief Resolves effective storage strategy from config and availability. */
 StorageStrategyKind StorageStrategyRegistry::resolve(unsigned int numQubits, const RegisterConfig &cfg) {
 	StorageStrategyKind selected = cfg.strategy;
 	if(selected != StorageStrategyKind::Auto) {
 		return selected;
 	}
 
+	// Prefer dense storage for small registers to avoid compression overhead.
 	const size_t estimatedBytes = checkedAmplitudeElementCount(numQubits) * sizeof(double);
 	if(estimatedBytes < cfg.autoThresholdBytes) {
 		return StorageStrategyKind::Dense;
@@ -29,6 +31,7 @@ StorageStrategyKind StorageStrategyRegistry::resolve(unsigned int numQubits, con
 	return StorageStrategyKind::Dense;
 }
 
+/** @brief Checks whether a strategy is available in this build. */
 bool StorageStrategyRegistry::isAvailable(StorageStrategyKind kind) {
 	switch(kind) {
 		case StorageStrategyKind::Dense:
@@ -43,6 +46,7 @@ bool StorageStrategyRegistry::isAvailable(StorageStrategyKind kind) {
 	return false;
 }
 
+/** @brief Lists available strategy names. */
 std::vector<std::string> StorageStrategyRegistry::listAvailable() {
 	std::vector<std::string> names;
 	names.push_back("dense");
@@ -56,6 +60,7 @@ std::vector<std::string> StorageStrategyRegistry::listAvailable() {
 	return names;
 }
 
+/** @brief Converts a strategy enum value to lower-case string name. */
 std::string StorageStrategyRegistry::toString(StorageStrategyKind kind) {
 	switch(kind) {
 		case StorageStrategyKind::Dense:
@@ -70,10 +75,12 @@ std::string StorageStrategyRegistry::toString(StorageStrategyKind kind) {
 	return "unknown";
 }
 
+/** @brief Resolves and constructs the backend selection object. */
 BackendSelection StorageStrategyRegistry::createSelection(unsigned int numQubits, const RegisterConfig &cfg) {
 	BackendSelection selection;
 	selection.strategy = resolve(numQubits, cfg);
 
+	// Resolve once, then enforce availability for the chosen backend.
 	switch(selection.strategy) {
 		case StorageStrategyKind::Dense:
 			selection.backend = createDenseStateBackend(cfg);

@@ -13,8 +13,10 @@
 namespace tmfqs {
 namespace storage {
 
+/** @brief Internal Blosc runtime state and RAII wrappers (pimpl payload). */
 struct BloscCodec::Impl {
 #ifdef HAVE_BLOSC2
+	/** @brief Initializes/finalizes the global Blosc runtime once per process. */
 	struct BloscRuntimeGuard {
 		BloscRuntimeGuard() { blosc2_init(); }
 		~BloscRuntimeGuard() { blosc2_destroy(); }
@@ -52,6 +54,7 @@ struct BloscCodec::Impl {
 #endif
 };
 
+/** @brief Constructs codec and validates Blosc configuration. */
 BloscCodec::BloscCodec(const RegisterConfig &cfg)
 	: cfg_(cfg), impl_(std::make_unique<Impl>()) {
 	validateConfig(cfg_);
@@ -61,6 +64,7 @@ BloscCodec::BloscCodec(const RegisterConfig &cfg)
 #endif
 }
 
+/** @brief Copy constructor that clones compressed storage. */
 BloscCodec::BloscCodec(const BloscCodec &other)
 	: cfg_(other.cfg_), impl_(std::make_unique<Impl>()) {
 	validateConfig(cfg_);
@@ -71,6 +75,7 @@ BloscCodec::BloscCodec(const BloscCodec &other)
 	cloneFrom(other);
 }
 
+/** @brief Copy assignment that deep-copies compressed storage. */
 BloscCodec &BloscCodec::operator=(const BloscCodec &other) {
 	if(this == &other) {
 		return *this;
@@ -84,8 +89,10 @@ BloscCodec &BloscCodec::operator=(const BloscCodec &other) {
 	return *this;
 }
 
+/** @brief Default destructor. */
 BloscCodec::~BloscCodec() = default;
 
+/** @brief Validates Blosc-related configuration fields. */
 void BloscCodec::validateConfig(const RegisterConfig &cfg) {
 	if(cfg.blosc.chunkStates == 0u) {
 		throw std::invalid_argument("BloscCodec: chunkStates must be >= 1");
@@ -105,6 +112,7 @@ void BloscCodec::validateConfig(const RegisterConfig &cfg) {
 	}
 }
 
+/** @brief Returns whether Blosc2 support is compiled in. */
 bool BloscCodec::available() {
 #ifdef HAVE_BLOSC2
 	return true;
@@ -113,8 +121,10 @@ bool BloscCodec::available() {
 #endif
 }
 
+/** @brief Recreates empty compressed storage with configured parameters. */
 void BloscCodec::resetStorage() {
 #ifdef HAVE_BLOSC2
+	/** @brief Reset creates a new empty super-chunk using configured compression parameters. */
 	blosc2_storage storage = BLOSC2_STORAGE_DEFAULTS;
 	impl_->schunkCParams = BLOSC2_CPARAMS_DEFAULTS;
 	impl_->schunkCParams.compcode = static_cast<uint8_t>(cfg_.blosc.compcode);
@@ -135,6 +145,7 @@ void BloscCodec::resetStorage() {
 #endif
 }
 
+/** @brief Compresses and appends one chunk to the super-chunk. */
 void BloscCodec::appendChunk(const double *data, size_t elems, const char *context) {
 #ifdef HAVE_BLOSC2
 	ensureStorage(context);
@@ -157,6 +168,7 @@ void BloscCodec::appendChunk(const double *data, size_t elems, const char *conte
 #endif
 }
 
+/** @brief Decompresses one chunk into a dense buffer. */
 void BloscCodec::readChunk(size_t chunkIndex, std::vector<double> &buffer, size_t expectedElems) const {
 #ifdef HAVE_BLOSC2
 	ensureStorage("chunk read");
@@ -190,6 +202,7 @@ void BloscCodec::readChunk(size_t chunkIndex, std::vector<double> &buffer, size_
 #endif
 }
 
+/** @brief Recompresses and replaces one existing chunk. */
 void BloscCodec::writeChunk(size_t chunkIndex, const std::vector<double> &buffer, size_t elems) {
 #ifdef HAVE_BLOSC2
 	ensureStorage("chunk write");
@@ -201,6 +214,7 @@ void BloscCodec::writeChunk(size_t chunkIndex, const std::vector<double> &buffer
 	}
 
 	if(!impl_->compressionCtx) {
+		/** @brief Reuse a dedicated compression context for repeated updates. */
 		blosc2_cparams cparams = BLOSC2_CPARAMS_DEFAULTS;
 		cparams.compcode = static_cast<uint8_t>(cfg_.blosc.compcode);
 		cparams.clevel = cfg_.blosc.clevel;
@@ -250,6 +264,7 @@ void BloscCodec::writeChunk(size_t chunkIndex, const std::vector<double> &buffer
 #endif
 }
 
+/** @brief Returns number of chunks currently stored. */
 size_t BloscCodec::chunkCount() const {
 #ifdef HAVE_BLOSC2
 	if(!impl_->schunk) return 0u;
@@ -259,6 +274,7 @@ size_t BloscCodec::chunkCount() const {
 #endif
 }
 
+/** @brief Returns whether compressed storage has been initialized. */
 bool BloscCodec::hasStorage() const {
 #ifdef HAVE_BLOSC2
 	return static_cast<bool>(impl_->schunk);
@@ -267,12 +283,14 @@ bool BloscCodec::hasStorage() const {
 #endif
 }
 
+/** @brief Validates storage availability before chunk operations. */
 void BloscCodec::ensureStorage(const char *context) const {
 	if(!hasStorage()) {
 		throw std::logic_error(std::string("BloscCodec: storage not initialized for ") + context);
 	}
 }
 
+/** @brief Deep-copies chunk payloads from another codec instance. */
 void BloscCodec::cloneFrom(const BloscCodec &other) {
 #ifdef HAVE_BLOSC2
 	if(!other.impl_ || !other.impl_->schunk) {
@@ -286,6 +304,7 @@ void BloscCodec::cloneFrom(const BloscCodec &other) {
 
 	resetStorage();
 	try {
+		/** @brief Clone by copying raw compressed chunks; no decompression round-trip required. */
 		for(int64_t ci = 0; ci < other.impl_->schunk->nchunks; ++ci) {
 			Impl::ChunkGuard chunk;
 			const int cbytes = blosc2_schunk_get_chunk(other.impl_->schunk.get(), ci, &chunk.data, &chunk.needsFree);

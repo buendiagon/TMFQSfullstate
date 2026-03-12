@@ -24,8 +24,12 @@ namespace tmfqs {
 #ifdef HAVE_ZFP
 namespace {
 
+/**
+ * @brief ZFP-backed state backend with chunk cache for decompressed working set.
+ */
 class ZfpStateBackend final : public IStateBackend {
 	private:
+		/** @brief Persistent payload for one compressed chunk. */
 		struct ChunkStorage {
 			std::vector<uint8_t> compressed;
 			size_t elemCount = 0;
@@ -43,33 +47,45 @@ class ZfpStateBackend final : public IStateBackend {
 			double *amp = nullptr;
 		};
 
+		/** @brief Register and configuration metadata. */
 		unsigned int numQubits_ = 0;
 		unsigned int numStates_ = 0;
 		RegisterConfig cfg_;
+		/** @brief Codec and chunk geometry. */
 		storage::ZfpCodec codec_;
 		storage::ChunkLayout layout_;
+		/** @brief Compressed chunk storage owned by this backend. */
 		std::vector<ChunkStorage> chunks_;
+		/** @brief Decompressed working-set cache used for gate application. */
 		storage::ChunkCache cache_;
+		/** @brief Scratch used for read-only queries when a chunk is not cached. */
 		mutable std::vector<double> ioScratch_;
+		/** @brief Nesting depth for begin/end batch sections. */
 		unsigned int batchDepth_ = 0;
+		/** @brief Shared workspace for generic gate application. */
 		GateBlockWorkspace gateWorkspace_;
 
+		/** @brief Verifies that backend storage has been configured. */
 		void ensureInitialized(const char *operation) const {
 			storage::ensureBackendInitialized(numStates_ > 0 && !chunks_.empty(), "ZfpStateBackend", operation);
 		}
 
+		/** @brief Tests whether a pair operation modified the first amplitude. */
 		bool touchesFirst(PairMutation mutation) const {
 			return mutation == PairMutation::First || mutation == PairMutation::Both;
 		}
 
+		/** @brief Tests whether a pair operation modified the second amplitude. */
 		bool touchesSecond(PairMutation mutation) const {
 			return mutation == PairMutation::Second || mutation == PairMutation::Both;
 		}
 
+		/** @brief Returns element count stored in one compressed chunk. */
 		size_t chunkElemCount(size_t chunkIndex) const {
 			return chunks_[chunkIndex].elemCount;
 		}
 
+		/** @brief Loads one chunk from compressed storage into cache buffer. */
 		void loadChunk(size_t chunkIndex, std::vector<double> &buffer, size_t elemCount) {
 			const ChunkStorage &chunk = chunks_[chunkIndex];
 			if(chunk.elemCount != elemCount) {
@@ -78,6 +94,7 @@ class ZfpStateBackend final : public IStateBackend {
 			codec_.decompress(chunk.compressed, elemCount, buffer);
 		}
 
+		/** @brief Stores one cache buffer back into compressed chunk storage. */
 		void storeChunk(size_t chunkIndex, const std::vector<double> &buffer, size_t elemCount) {
 			ChunkStorage &chunk = chunks_[chunkIndex];
 			if(chunk.elemCount != elemCount) {
@@ -86,6 +103,7 @@ class ZfpStateBackend final : public IStateBackend {
 			codec_.compress(buffer.data(), elemCount, chunk.compressed);
 		}
 
+		/** @brief Acquires a writable cache slot for one chunk index. */
 		storage::ChunkCache::SlotHandle acquireChunk(size_t chunkIndex) {
 			return cache_.acquire(
 				chunkIndex,
@@ -94,12 +112,14 @@ class ZfpStateBackend final : public IStateBackend {
 				[&](size_t index) { return chunkElemCount(index); });
 		}
 
+		/** @brief Resolves and acquires writable amplitude pointer for one state. */
 		CacheAmplitudeRef acquireAmplitudeRef(StateIndex state) {
 			const storage::ChunkRef ref = layout_.stateRef(state);
 			auto slot = acquireChunk(ref.chunkIndex);
 			return {slot, slot.data + ref.elemOffset};
 		}
 
+		/** @brief Returns read-only amplitude pointer (cache hit or scratch decode). */
 		const double *findAmplitudeData(StateIndex state) const {
 			const storage::ChunkRef ref = layout_.stateRef(state);
 			if(const std::vector<double> *buffer = cache_.findBuffer(ref.chunkIndex)) {
@@ -109,11 +129,13 @@ class ZfpStateBackend final : public IStateBackend {
 			return ioScratch_.data() + ref.elemOffset;
 		}
 
+		/** @brief Reads amplitude through cache-backed mutable path. */
 		Amplitude readAmplitudeMutable(StateIndex state) {
 			CacheAmplitudeRef ref = acquireAmplitudeRef(state);
 			return {ref.amp[0], ref.amp[1]};
 		}
 
+		/** @brief Writes amplitude through cache-backed mutable path. */
 		void writeAmplitudeMutable(StateIndex state, Amplitude amp) {
 			CacheAmplitudeRef ref = acquireAmplitudeRef(state);
 			ref.amp[0] = amp.real;
@@ -121,18 +143,21 @@ class ZfpStateBackend final : public IStateBackend {
 			*ref.slot.dirty = true;
 		}
 
+		/** @brief Flushes all dirty cache slots to compressed storage. */
 		void flushCache() {
 			cache_.flushAll(
 				[&](size_t index, const std::vector<double> &buffer, size_t elemCount) { storeChunk(index, buffer, elemCount); },
 				[&](size_t index) { return chunkElemCount(index); });
 		}
 
+		/** @brief Flushes cache only when not inside an operation batch. */
 		void flushCacheIfNeeded() {
 			if(batchDepth_ == 0u) {
 				flushCache();
 			}
 		}
 
+		/** @brief Configures chunk layout, storage metadata, and cache topology. */
 		void configureStorage(unsigned int numQubits) {
 			numQubits_ = numQubits;
 			numStates_ = checkedStateCount(numQubits_);
@@ -146,14 +171,18 @@ class ZfpStateBackend final : public IStateBackend {
 		}
 
 		template <typename MutateFn>
+		/** @brief Runs one mutating action and conditionally flushes pending writes. */
 		void mutate(const char *operation, MutateFn mutateFn) {
 			ensureInitialized(operation);
 			mutateFn();
+			// Outside batches, keep compressed storage immediately consistent.
 			flushCacheIfNeeded();
 		}
 
 		template <typename PairFn>
+		/** @brief Iterates state pairs for one target bit using chunk-aware traversal. */
 		void runPairKernel(unsigned int targetMask, PairFn pairFn) {
+			// Select traversal that best matches chunk boundaries.
 			const storage::PairKernelMode mode = storage::PairKernelExecutor::selectMode(layout_, targetMask);
 			if(mode == storage::PairKernelMode::IntraChunk) {
 				size_t activeChunk = std::numeric_limits<size_t>::max();
@@ -212,16 +241,19 @@ class ZfpStateBackend final : public IStateBackend {
 		}
 
 	public:
+		/** @brief Constructs backend from register configuration. */
 		explicit ZfpStateBackend(const RegisterConfig &cfg)
 			: cfg_(cfg), codec_(cfg_), cache_(cfg.zfp.gateCacheSlots, 1u) {}
 
 		ZfpStateBackend(const ZfpStateBackend &) = default;
 		ZfpStateBackend &operator=(const ZfpStateBackend &) = default;
 
+		/** @brief Clones backend including current compressed state. */
 		std::unique_ptr<IStateBackend> clone() const override {
 			return std::make_unique<ZfpStateBackend>(*this);
 		}
 
+		/** @brief Initializes backend to zero amplitudes. */
 		void initZero(unsigned int numQubits) override {
 			configureStorage(numQubits);
 			std::vector<double> zeroChunk;
@@ -231,6 +263,7 @@ class ZfpStateBackend final : public IStateBackend {
 			}
 		}
 
+		/** @brief Initializes one basis state with custom amplitude. */
 		void initBasis(unsigned int numQubits, StateIndex initState, Amplitude amp) override {
 			initZero(numQubits);
 			storage::validateBackendStateIndex("ZfpStateBackend::initBasis", initState, numStates_);
@@ -238,6 +271,7 @@ class ZfpStateBackend final : public IStateBackend {
 			flushCache();
 		}
 
+		/** @brief Initializes equal superposition over selected basis states. */
 		void initUniformSuperposition(unsigned int numQubits, const BasisStateList &basisStates) override {
 			configureStorage(numQubits);
 			std::vector<StateIndex> selected;
@@ -273,6 +307,7 @@ class ZfpStateBackend final : public IStateBackend {
 			}
 		}
 
+		/** @brief Loads complete amplitude vector into compressed chunk storage. */
 		void loadAmplitudes(unsigned int numQubits, AmplitudesVector amplitudes) override {
 			configureStorage(numQubits);
 			if(amplitudes.size() != checkedAmplitudeElementCount(numQubits_)) {
@@ -286,6 +321,7 @@ class ZfpStateBackend final : public IStateBackend {
 			}
 		}
 
+		/** @brief Reads one basis-state amplitude. */
 		Amplitude amplitude(StateIndex state) const override {
 			ensureInitialized("amplitude query");
 			storage::validateBackendStateIndex("ZfpStateBackend::amplitude", state, numStates_);
@@ -293,6 +329,7 @@ class ZfpStateBackend final : public IStateBackend {
 			return {ampData[0], ampData[1]};
 		}
 
+		/** @brief Writes one basis-state amplitude. */
 		void setAmplitude(StateIndex state, Amplitude amp) override {
 			mutate("state update", [&]() {
 				storage::validateBackendStateIndex("ZfpStateBackend::setAmplitude", state, numStates_);
@@ -300,11 +337,13 @@ class ZfpStateBackend final : public IStateBackend {
 			});
 		}
 
+		/** @brief Computes probability mass for one basis state. */
 		double probability(StateIndex state) const override {
 			const Amplitude amp = amplitude(state);
 			return amp.real * amp.real + amp.imag * amp.imag;
 		}
 
+		/** @brief Computes total probability mass across all basis states. */
 		double totalProbability() const override {
 			ensureInitialized("total probability query");
 			double total = 0.0;
@@ -325,6 +364,7 @@ class ZfpStateBackend final : public IStateBackend {
 			return total;
 		}
 
+		/** @brief Samples one basis state using cumulative probability scan. */
 		StateIndex sampleMeasurement(double rnd) const override {
 			ensureInitialized("measurement");
 			if(rnd < 0.0 || rnd >= 1.0) {
@@ -355,6 +395,7 @@ class ZfpStateBackend final : public IStateBackend {
 			throw std::runtime_error("ZfpStateBackend::sampleMeasurement cumulative probability did not reach sample");
 		}
 
+		/** @brief Prints amplitudes above threshold epsilon. */
 		void printNonZeroStates(std::ostream &os, double epsilon) const override {
 			ensureInitialized("state printing");
 			if(epsilon < 0.0) {
@@ -384,6 +425,7 @@ class ZfpStateBackend final : public IStateBackend {
 			}
 		}
 
+		/** @brief Applies phase flip to one basis state. */
 		void phaseFlipBasisState(StateIndex state) override {
 			mutate("basis-state phase flip", [&]() {
 				storage::validateBackendStateIndex("ZfpStateBackend::phaseFlipBasisState", state, numStates_);
@@ -394,6 +436,7 @@ class ZfpStateBackend final : public IStateBackend {
 			});
 		}
 
+		/** @brief Applies inversion-about-mean transform to all amplitudes. */
 		void inversionAboutMean() override {
 			mutate("inversion about mean", [&]() {
 				double sumReal = 0.0;
@@ -420,6 +463,7 @@ class ZfpStateBackend final : public IStateBackend {
 			});
 		}
 
+		/** @brief Applies Hadamard gate to one qubit. */
 		void applyHadamard(QubitIndex qubit) override {
 			ensureInitialized("hadamard application");
 			storage::validateBackendSingleQubit("ZfpStateBackend::applyHadamard", qubit, numQubits_);
@@ -443,6 +487,7 @@ class ZfpStateBackend final : public IStateBackend {
 			});
 		}
 
+		/** @brief Applies Pauli-X gate to one qubit. */
 		void applyPauliX(QubitIndex qubit) override {
 			ensureInitialized("pauli-x application");
 			storage::validateBackendSingleQubit("ZfpStateBackend::applyPauliX", qubit, numQubits_);
@@ -459,6 +504,7 @@ class ZfpStateBackend final : public IStateBackend {
 			});
 		}
 
+		/** @brief Applies controlled phase-shift gate. */
 		void applyControlledPhaseShift(QubitIndex controlQubit, QubitIndex targetQubit, double theta) override {
 			ensureInitialized("controlled phase-shift application");
 			storage::validateBackendTwoQubits("ZfpStateBackend::applyControlledPhaseShift", controlQubit, targetQubit, numQubits_);
@@ -483,6 +529,7 @@ class ZfpStateBackend final : public IStateBackend {
 			});
 		}
 
+		/** @brief Applies controlled-NOT gate. */
 		void applyControlledNot(QubitIndex controlQubit, QubitIndex targetQubit) override {
 			ensureInitialized("controlled-not application");
 			storage::validateBackendTwoQubits("ZfpStateBackend::applyControlledNot", controlQubit, targetQubit, numQubits_);
@@ -503,8 +550,10 @@ class ZfpStateBackend final : public IStateBackend {
 			});
 		}
 
+		/** @brief Applies an arbitrary gate matrix to selected qubits. */
 		void applyGate(const QuantumGate &gate, const QubitList &qubits) override {
 			mutate("gate application", [&]() {
+				// Adapt cached chunk access to the generic gate application engine.
 				auto loadAmplitude = [&](StateIndex state) -> Amplitude { return readAmplitudeMutable(state); };
 				auto storeAmplitude = [&](StateIndex state, Amplitude amp) { writeAmplitudeMutable(state, amp); };
 				storage::GateApplyEngine::apply(
@@ -518,11 +567,13 @@ class ZfpStateBackend final : public IStateBackend {
 			});
 		}
 
+		/** @brief Opens an operation batch scope. */
 		void beginOperationBatch() override {
 			ensureInitialized("batch begin");
 			++batchDepth_;
 		}
 
+		/** @brief Closes an operation batch scope and flushes pending writes. */
 		void endOperationBatch() override {
 			if(batchDepth_ == 0u) {
 				throw std::logic_error("ZfpStateBackend::endOperationBatch called without matching beginOperationBatch");
@@ -537,6 +588,7 @@ class ZfpStateBackend final : public IStateBackend {
 } // namespace
 #endif
 
+/** @brief Reports whether ZFP backend support is available. */
 bool isZfpStateBackendAvailable() {
 #ifdef HAVE_ZFP
 	return true;
@@ -545,6 +597,7 @@ bool isZfpStateBackendAvailable() {
 #endif
 }
 
+/** @brief Factory helper for creating a ZFP backend instance. */
 std::unique_ptr<IStateBackend> createZfpStateBackend(const RegisterConfig &cfg) {
 #ifdef HAVE_ZFP
 	return std::make_unique<ZfpStateBackend>(cfg);

@@ -10,22 +10,36 @@
 
 namespace tmfqs {
 
+/** @brief Precomputed index mapping for block-based gate application. */
 struct GateBlockLayout {
+	/** @brief Total number of qubits in the register. */
 	unsigned int numQubits = 0;
+	/** @brief Number of qubits touched by the gate. */
 	unsigned int activeQubits = 0;
+	/** @brief Number of independent blocks (`2^(numQubits - activeQubits)`). */
 	unsigned int numBlocks = 0;
+	/** @brief Number of states per block (`2^activeQubits`). */
 	unsigned int blockSize = 0;
+	/** @brief Target-qubit positions translated to internal bit positions. */
 	std::vector<unsigned int> targetPositions;
+	/** @brief Bit masks for each target qubit. */
 	std::vector<unsigned int> targetMasks;
+	/** @brief Non-target bit positions used to build per-block base states. */
 	std::vector<unsigned int> nonTargetPositions;
+	/** @brief Block-local offsets for each target-bit pattern. */
 	std::vector<unsigned int> blockOffsets;
 };
 
+/** @brief Reusable temporary buffers used during block gate multiplication. */
 struct GateBlockWorkspace {
+	/** @brief Loaded amplitudes for one block. */
 	std::vector<Amplitude> localAmps;
+	/** @brief Absolute state indices for current block entries. */
 	std::vector<StateIndex> stateIndices;
+	/** @brief Cached gate row pointers to avoid repeated indexing. */
 	std::vector<const Amplitude *> gateRows;
 
+	/** @brief Resizes workspace buffers to current block size. */
 	void ensure(size_t blockSize) {
 		if(localAmps.size() != blockSize) {
 			localAmps.resize(blockSize);
@@ -37,6 +51,7 @@ struct GateBlockWorkspace {
 	}
 };
 
+/** @brief Builds the non-target bits for a block index. */
 inline unsigned int composeBaseStateFromBlock(unsigned int block, const std::vector<unsigned int> &nonTargetPositions) {
 	unsigned int baseState = 0;
 	for(size_t idx = 0; idx < nonTargetPositions.size(); ++idx) {
@@ -45,6 +60,7 @@ inline unsigned int composeBaseStateFromBlock(unsigned int block, const std::vec
 	return baseState;
 }
 
+/** @brief Precomputes all indexing metadata required to apply a gate by blocks. */
 inline GateBlockLayout makeGateBlockLayout(const QubitList &qubits, unsigned int numQubits) {
 	GateBlockLayout layout;
 	layout.numQubits = numQubits;
@@ -83,6 +99,7 @@ inline GateBlockLayout makeGateBlockLayout(const QubitList &qubits, unsigned int
 }
 
 template <typename LoadAmplitudeFn, typename StoreAmplitudeFn>
+/** @brief Applies a gate matrix by iterating independent state blocks on target qubits. */
 inline void applyGateByBlocks(
 	const QuantumGate &gate,
 	const GateBlockLayout &layout,

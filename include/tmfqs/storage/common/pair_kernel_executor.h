@@ -9,14 +9,20 @@
 namespace tmfqs {
 namespace storage {
 
+/** @brief Access pattern chosen for pairwise two-state gate kernels. */
 enum class PairKernelMode {
+	/** @brief Generic state-index traversal. */
 	Fallback,
+	/** @brief Both states in each pair live in one chunk. */
 	IntraChunk,
+	/** @brief States in each pair are aligned across two different chunks. */
 	InterChunk
 };
 
+/** @brief Utilities to iterate `(state0, state1)` pairs induced by one target bit mask. */
 class PairKernelExecutor {
 	public:
+		/** @brief Selects the best traversal strategy based on chunk geometry and target mask. */
 		static PairKernelMode selectMode(const ChunkLayout &layout, unsigned int targetMask) {
 			const size_t statesPerChunk = layout.statesPerChunk();
 			if(statesPerChunk == 0u || (statesPerChunk & (statesPerChunk - 1u)) != 0u) {
@@ -32,6 +38,7 @@ class PairKernelExecutor {
 		}
 
 		template <typename PairFn>
+		/** @brief Iterates all target-bit pairs without chunk-aware optimizations. */
 		static void runFallback(unsigned int numStates, unsigned int targetMask, PairFn pairFn) {
 			const unsigned int stride = targetMask << 1u;
 			for(unsigned int base = 0; base < numStates; base += stride) {
@@ -43,6 +50,7 @@ class PairKernelExecutor {
 		}
 
 		template <typename PairFn>
+		/** @brief Iterates target-bit pairs where both states are known to be in one chunk. */
 		static void runIntraChunk(const ChunkLayout &layout, unsigned int targetMask, PairFn pairFn) {
 			const size_t localMask = static_cast<size_t>(targetMask);
 			const size_t stride = localMask << 1u;
@@ -63,6 +71,7 @@ class PairKernelExecutor {
 		}
 
 		template <typename PairFn>
+		/** @brief Iterates target-bit pairs where each pair spans two aligned chunks. */
 		static void runInterChunk(const ChunkLayout &layout, unsigned int targetMask, PairFn pairFn) {
 			const size_t statesPerChunk = layout.statesPerChunk();
 			const size_t chunkDelta = static_cast<size_t>(targetMask) / statesPerChunk;

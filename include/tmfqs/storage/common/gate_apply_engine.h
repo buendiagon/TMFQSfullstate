@@ -7,9 +7,11 @@
 namespace tmfqs {
 namespace storage {
 
+/** @brief Shared gate-application helper that validates targets then applies by blocks. */
 class GateApplyEngine {
 	public:
 		template <typename LoadAmplitudeFn, typename StoreAmplitudeFn>
+		/** @brief Applies `gate` over `qubits` using caller-provided load/store callbacks. */
 		static void apply(
 			const char *scopeName,
 			const QuantumGate &gate,

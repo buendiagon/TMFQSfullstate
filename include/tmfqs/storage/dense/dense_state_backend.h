@@ -8,6 +8,11 @@
 
 namespace tmfqs {
 
+/**
+ * @brief Creates a dense in-memory state backend.
+ * @param cfg Register configuration (currently unused for dense backend).
+ * @return Backend instance implementing dense storage.
+ */
 std::unique_ptr<IStateBackend> createDenseStateBackend(const RegisterConfig &cfg);
 
 } // namespace tmfqs

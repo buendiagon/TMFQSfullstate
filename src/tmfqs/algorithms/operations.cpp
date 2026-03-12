@@ -8,7 +8,11 @@ namespace algorithms {
 namespace {
 
 template <typename ExecuteFn>
+/**
+ * @brief Executes a callable inside one backend operation batch.
+ */
 void runWithOperationBatch(QuantumRegister &quantumRegister, ExecuteFn &&executeFn) {
+	// Keep backend batching exception-safe: always attempt to close the batch.
 	quantumRegister.beginOperationBatch();
 	bool batchOpen = true;
 	try {
@@ -27,10 +31,16 @@ void runWithOperationBatch(QuantumRegister &quantumRegister, ExecuteFn &&execute
 
 } // namespace
 
+/**
+ * @brief Appends one operation step to the compiled plan.
+ */
 void CompiledAlgorithmPlan::addOperation(const AlgorithmOperation &operation) {
 	steps.push_back(operation);
 }
 
+/**
+ * @brief Appends a repeat block step when inputs are valid.
+ */
 void CompiledAlgorithmPlan::addRepeatBlock(std::vector<AlgorithmOperation> operations, unsigned int repeatCount) {
 	if(repeatCount == 0 || operations.empty()) {
 		return;
@@ -38,7 +48,11 @@ void CompiledAlgorithmPlan::addRepeatBlock(std::vector<AlgorithmOperation> opera
 	steps.push_back(RepeatBlockStep{std::move(operations), repeatCount});
 }
 
+/**
+ * @brief Executes one operation variant on the target register.
+ */
 void executeOperation(QuantumRegister &quantumRegister, const AlgorithmOperation &operation) {
+	// Variant dispatch keeps operation descriptions decoupled from register APIs.
 	std::visit(
 		[&](const auto &op) {
 			using Op = std::decay_t<decltype(op)>;
@@ -61,6 +75,9 @@ void executeOperation(QuantumRegister &quantumRegister, const AlgorithmOperation
 		operation);
 }
 
+/**
+ * @brief Executes a linear operation list under one batch scope.
+ */
 void executeOperations(QuantumRegister &quantumRegister, const std::vector<AlgorithmOperation> &operations) {
 	runWithOperationBatch(quantumRegister, [&]() {
 		for(const AlgorithmOperation &operation : operations) {
@@ -69,9 +86,13 @@ void executeOperations(QuantumRegister &quantumRegister, const std::vector<Algor
 	});
 }
 
+/**
+ * @brief Executes all compiled plan steps, including repeat blocks.
+ */
 void executePlan(QuantumRegister &quantumRegister, const CompiledAlgorithmPlan &plan) {
 	runWithOperationBatch(quantumRegister, [&]() {
 		for(const CompiledAlgorithmStep &step : plan.steps) {
+			// A plan step is either a single operation or a repeat block.
 			std::visit(
 				[&](const auto &item) {
 					using Item = std::decay_t<decltype(item)>;

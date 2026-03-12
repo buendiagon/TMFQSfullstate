@@ -1,6 +1,7 @@
 #ifndef TMFQSFS_INCLUDE
 #define TMFQSFS_INCLUDE
 
+/** @brief Public umbrella header for the TMFQS library. */
 #include "tmfqs/algorithms/algorithms.h"
 #include "tmfqs/config/register_config.h"
 #include "tmfqs/core/constants.h"

@@ -8,7 +8,16 @@
 
 namespace tmfqs {
 
+/**
+ * @brief Creates a Blosc-compressed state backend.
+ * @param cfg Register configuration including Blosc options.
+ * @return Backend instance, or `nullptr` when Blosc is unavailable.
+ */
 std::unique_ptr<IStateBackend> createBloscStateBackend(const RegisterConfig &cfg);
+/**
+ * @brief Indicates whether Blosc backend support is available.
+ * @return `true` if Blosc support is compiled in.
+ */
 bool isBloscStateBackendAvailable();
 
 } // namespace tmfqs

@@ -8,7 +8,16 @@
 
 namespace tmfqs {
 
+/**
+ * @brief Creates a ZFP-compressed state backend.
+ * @param cfg Register configuration including ZFP options.
+ * @return Backend instance, or `nullptr` when ZFP is unavailable.
+ */
 std::unique_ptr<IStateBackend> createZfpStateBackend(const RegisterConfig &cfg);
+/**
+ * @brief Indicates whether ZFP backend support is available.
+ * @return `true` if ZFP support is compiled in.
+ */
 bool isZfpStateBackendAvailable();
 
 } // namespace tmfqs
