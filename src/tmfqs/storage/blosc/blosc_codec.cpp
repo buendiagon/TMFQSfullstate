@@ -1,6 +1,5 @@
 #include "tmfqs/storage/blosc/blosc_codec.h"
 
-#include <algorithm>
 #include <cstdlib>
 #include <limits>
 #include <stdexcept>

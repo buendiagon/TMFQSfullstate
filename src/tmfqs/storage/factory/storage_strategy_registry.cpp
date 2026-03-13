@@ -1,7 +1,6 @@
 #include "tmfqs/storage/factory/storage_strategy_registry.h"
 
 #include <stdexcept>
-#include <utility>
 
 #include "tmfqs/core/state_space.h"
 #include "tmfqs/storage/blosc/blosc_state_backend.h"

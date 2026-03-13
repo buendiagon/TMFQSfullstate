@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
-#include <utility>
 #include <vector>
 
 namespace tmfqs {

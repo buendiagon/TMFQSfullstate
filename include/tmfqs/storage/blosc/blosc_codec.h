@@ -2,7 +2,6 @@
 #define TMFQS_STORAGE_BLOSC_BLOSC_CODEC_H
 
 #include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <vector>
 
