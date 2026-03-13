@@ -11,7 +11,10 @@
         "${workspaceFolder}/include",
         "${workspaceFolder}/src"
       ],
-      "defines": []
+      "defines": [
+        "HAVE_BLOSC2",
+        "HAVE_ZFP"
+      ]
     }
   ]
 }
