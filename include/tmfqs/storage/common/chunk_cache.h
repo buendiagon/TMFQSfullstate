@@ -42,7 +42,11 @@ class ChunkCache {
 			configure(capacity, chunkCount);
 		}
 
-		/** @brief Resets cache topology for a backend with `chunkCount` chunks. */
+		/** 
+		* @brief Resets cache topology for a backend with `chunkCount` chunks.
+		* @param capacity Maximum number of simultaneously cached chunks.
+		* @param chunkCount Total number of chunks in the backend.
+		*/
 		void configure(size_t capacity, size_t chunkCount) {
 			if(capacity == 0u) {
 				throw std::invalid_argument("ChunkCache: capacity must be >= 1");

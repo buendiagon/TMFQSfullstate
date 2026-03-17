@@ -126,18 +126,6 @@ class QuantumGate {
 		 * @return Ising gate matrix.
 		 */
 		static QuantumGate Ising(double theta);
-		/**
-		 * @brief Creates a dense QFT matrix.
-		 * @param numQubits Number of qubits covered by the transform.
-		 * @return `2^numQubits x 2^numQubits` QFT matrix.
-		 */
-		static QuantumGate QFT(unsigned int numQubits);
-		/**
-		 * @brief Creates a dense inverse-QFT matrix.
-		 * @param numQubits Number of qubits covered by the transform.
-		 * @return `2^numQubits x 2^numQubits` inverse-QFT matrix.
-		 */
-		static QuantumGate IQFT(unsigned int numQubits);
 };
 
 /**

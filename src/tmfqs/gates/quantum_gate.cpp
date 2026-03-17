@@ -1,13 +1,11 @@
 #include "tmfqs/gates/quantum_gate.h"
 
-#include <cstdint>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
 
 #include "tmfqs/core/constants.h"
 #include "tmfqs/core/math.h"
-#include "tmfqs/core/state_space.h"
 
 namespace tmfqs {
 
@@ -208,42 +206,6 @@ QuantumGate QuantumGate::Ising(double theta) {
 	g[1][2].imag = -s;
 	g[2][1].imag = -s;
 	g[3][0].imag = -s;
-	return g;
-}
-
-/** @brief Creates dense Quantum Fourier Transform matrix. */
-QuantumGate QuantumGate::QFT(unsigned int numQubits) {
-	const unsigned int dimension = checkedStateCount(numQubits);
-	QuantumGate g(dimension);
-	// QFT matrix entries: exp(2*pi*i*row*col/N) / sqrt(N).
-	const double norm = 1.0 / std::sqrt(static_cast<double>(dimension));
-	const double twoPiOverDimension = 2.0 * kPi / static_cast<double>(dimension);
-	for(unsigned int row = 0; row < dimension; ++row) {
-		for(unsigned int col = 0; col < dimension; ++col) {
-			const uint64_t indexProduct = static_cast<uint64_t>(row) * static_cast<uint64_t>(col);
-			const double phase = twoPiOverDimension * static_cast<double>(indexProduct);
-			g[row][col].real = norm * std::cos(phase);
-			g[row][col].imag = norm * std::sin(phase);
-		}
-	}
-	return g;
-}
-
-/** @brief Creates dense inverse Quantum Fourier Transform matrix. */
-QuantumGate QuantumGate::IQFT(unsigned int numQubits) {
-	const unsigned int dimension = checkedStateCount(numQubits);
-	QuantumGate g(dimension);
-	// Inverse QFT uses the conjugate phase sign.
-	const double norm = 1.0 / std::sqrt(static_cast<double>(dimension));
-	const double twoPiOverDimension = 2.0 * kPi / static_cast<double>(dimension);
-	for(unsigned int row = 0; row < dimension; ++row) {
-		for(unsigned int col = 0; col < dimension; ++col) {
-			const uint64_t indexProduct = static_cast<uint64_t>(row) * static_cast<uint64_t>(col);
-			const double phase = -twoPiOverDimension * static_cast<double>(indexProduct);
-			g[row][col].real = norm * std::cos(phase);
-			g[row][col].imag = norm * std::sin(phase);
-		}
-	}
 	return g;
 }
 
