@@ -1,5 +1,6 @@
 #include "tmfqsfs.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <iostream>
@@ -9,6 +10,10 @@
 #include "../common/test_helpers.h"
 
 namespace {
+
+bool containsState(const std::vector<tmfqs::StateIndex> &states, tmfqs::StateIndex value) {
+	return std::find(states.begin(), states.end(), value) != states.end();
+}
 
 void testComplexExp() {
 	using namespace tmfqs;
@@ -57,25 +62,28 @@ void testQft() {
 	for(unsigned int s = 0; s < 8; ++s) {
 		const Amplitude amp = qreg.amplitude(s);
 		assert(tmfqs_test::approxEqual(amp.real, expectedAmp, 1e-6));
+		assert(tmfqs_test::approxEqual(amp.imag, 0.0, 1e-6));
 	}
 	assert(tmfqs_test::approxEqual(qreg.totalProbability(), 1.0, 1e-6));
 }
 
-void testQftIfftRoundTrip() {
+void testQftBasisPhases() {
 	using namespace tmfqs;
-	std::cout << "=== QFT/IQFT round-trip ===\n";
-	QuantumRegister qreg(3, 5);
-	qreg.applyGate(QuantumGate::QFT(3), QubitList{0, 1, 2});
-	qreg.applyGate(QuantumGate::IQFT(3), QubitList{0, 1, 2});
-	for(unsigned int s = 0; s < 8; ++s) {
-		const Amplitude amp = qreg.amplitude(s);
-		if(s == 5u) {
-			assert(tmfqs_test::approxEqual(amp.real, 1.0, 1e-6));
-			assert(tmfqs_test::approxEqual(amp.imag, 0.0, 1e-6));
-		} else {
-			assert(tmfqs_test::approxEqual(amp.real, 0.0, 1e-6));
-			assert(tmfqs_test::approxEqual(amp.imag, 0.0, 1e-6));
-		}
+	std::cout << "=== qftInPlace basis phases ===\n";
+	const unsigned int numQubits = 3;
+	const unsigned int sourceState = 5;
+	const unsigned int stateCount = checkedStateCount(numQubits);
+	QuantumRegister qreg(numQubits, sourceState);
+	algorithms::qftInPlace(qreg);
+
+	const double amplitudeScale = 1.0 / std::sqrt(static_cast<double>(stateCount));
+	for(unsigned int y = 0; y < stateCount; ++y) {
+		const double angle =
+			(2.0 * kPi * static_cast<double>(sourceState) * static_cast<double>(y)) /
+			static_cast<double>(stateCount);
+		const Amplitude amp = qreg.amplitude(y);
+		assert(tmfqs_test::approxEqual(amp.real, amplitudeScale * std::cos(angle), 1e-6));
+		assert(tmfqs_test::approxEqual(amp.imag, amplitudeScale * std::sin(angle), 1e-6));
 	}
 }
 
@@ -103,6 +111,86 @@ void testGroverInvalidInputThrows() {
 	bool threw = false;
 	try {
 		(void)algorithms::groverSearch({8u, 3u, false}, randomSource);
+	} catch(const std::invalid_argument &) {
+		threw = true;
+	}
+	assert(threw);
+}
+
+void testGroverMultiMarkedFullSpace() {
+	using namespace tmfqs;
+	std::cout << "=== generalized Grover multi-marked full space ===\n";
+	const std::vector<StateIndex> markedStates = {1u, 6u};
+	const algorithms::GroverConfig config{BasisStateList{1u, 6u}, 3u, false};
+	for(int t = 0; t < 32; ++t) {
+		Mt19937RandomSource randomSource(static_cast<uint32_t>(300u + t));
+		assert(containsState(markedStates, algorithms::groverSearch(config, randomSource)));
+	}
+}
+
+void testGroverSubsetSupport() {
+	using namespace tmfqs;
+	std::cout << "=== generalized Grover subset support ===\n";
+	const std::vector<StateIndex> markedStates = {2u, 5u};
+	const algorithms::GroverConfig config{BasisStateList{2u, 5u, 2u}, 3u, false};
+	for(int t = 0; t < 16; ++t) {
+		Mt19937RandomSource randomSource(static_cast<uint32_t>(400u + t));
+		assert(containsState(markedStates, algorithms::groverSearch(config, randomSource)));
+	}
+}
+
+void testGroverZeroIterationCase() {
+	using namespace tmfqs;
+	std::cout << "=== generalized Grover zero-iteration case ===\n";
+	const algorithms::GroverConfig config{BasisStateList{0u, 1u, 2u, 3u}, 2u, false};
+	Mt19937RandomSource randomSource(500u);
+	const StateIndex measured = algorithms::groverSearch(config, randomSource);
+	assert(measured < checkedStateCount(config.numQubits));
+}
+
+void testGroverBackendSelection() {
+	using namespace tmfqs;
+	std::cout << "=== generalized Grover arbitrary reference state ===\n";
+	const std::vector<StateIndex> markedStates = {1u, 6u};
+
+	RegisterConfig denseCfg;
+	denseCfg.strategy = StorageStrategyKind::Dense;
+	{
+		const algorithms::GroverConfig denseConfig{BasisStateList{1u, 6u}, 3u, false, denseCfg};
+		Mt19937RandomSource randomSource(600u);
+		assert(containsState(markedStates, algorithms::groverSearch(denseConfig, randomSource)));
+	}
+
+	if(StorageStrategyRegistry::isAvailable(StorageStrategyKind::Blosc)) {
+		RegisterConfig bloscCfg;
+		bloscCfg.strategy = StorageStrategyKind::Blosc;
+		bloscCfg.blosc.chunkStates = 8;
+		bloscCfg.blosc.gateCacheSlots = 4;
+		const algorithms::GroverConfig bloscConfig{BasisStateList{1u, 6u}, 3u, false, bloscCfg};
+		Mt19937RandomSource randomSource(601u);
+		assert(containsState(markedStates, algorithms::groverSearch(bloscConfig, randomSource)));
+	}
+
+	if(StorageStrategyRegistry::isAvailable(StorageStrategyKind::Zfp)) {
+		RegisterConfig zfpCfg;
+		zfpCfg.strategy = StorageStrategyKind::Zfp;
+		zfpCfg.zfp.mode = ZfpCompressionMode::FixedRate;
+		zfpCfg.zfp.rate = 32.0;
+		zfpCfg.zfp.chunkStates = 8;
+		zfpCfg.zfp.gateCacheSlots = 4;
+		const algorithms::GroverConfig zfpConfig{BasisStateList{1u, 6u}, 3u, false, zfpCfg};
+		Mt19937RandomSource randomSource(602u);
+		assert(containsState(markedStates, algorithms::groverSearch(zfpConfig, randomSource)));
+	}
+}
+
+void testGroverInvalidMultiMarkedInput() {
+	using namespace tmfqs;
+	std::cout << "=== generalized Grover invalid input ===\n";
+	Mt19937RandomSource randomSource(700u);
+	bool threw = false;
+	try {
+		(void)algorithms::groverSearch({BasisStateList{1u, 8u}, 3u, false}, randomSource);
 	} catch(const std::invalid_argument &) {
 		threw = true;
 	}
@@ -169,9 +257,14 @@ int main() {
 	testGroverSmallSpaceIterations();
 	testScalarMultiplication();
 	testQft();
-	testQftIfftRoundTrip();
+	testQftBasisPhases();
 	testGroverPrimitives();
 	testGroverInvalidInputThrows();
+	testGroverMultiMarkedFullSpace();
+	testGroverSubsetSupport();
+	testGroverZeroIterationCase();
+	testGroverBackendSelection();
+	testGroverInvalidMultiMarkedInput();
 	testOperationExecutor();
 	testCompiledPlanRepeat();
 	testDeterministicGroverSeed();

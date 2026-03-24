@@ -1,0 +1,19 @@
+add_executable(test_algorithms integration/algorithms/test_algorithms.cpp)
+target_link_libraries(test_algorithms PRIVATE tmfqsfs)
+tmfqs_configure_runtime_target(test_algorithms)
+add_test(NAME test_algorithms COMMAND test_algorithms)
+
+add_executable(test_register_validation integration/register/test_register_validation.cpp)
+target_link_libraries(test_register_validation PRIVATE tmfqsfs)
+tmfqs_configure_runtime_target(test_register_validation)
+add_test(NAME test_register_validation COMMAND test_register_validation)
+
+add_executable(test_storage_parity integration/storage/test_storage_parity.cpp)
+target_link_libraries(test_storage_parity PRIVATE tmfqsfs)
+tmfqs_configure_runtime_target(test_storage_parity)
+add_test(NAME test_storage_parity COMMAND test_storage_parity)
+
+add_executable(test_storage_cache integration/storage/test_storage_cache.cpp)
+target_link_libraries(test_storage_cache PRIVATE tmfqsfs)
+tmfqs_configure_runtime_target(test_storage_cache)
+add_test(NAME test_storage_cache COMMAND test_storage_cache)

@@ -31,6 +31,15 @@
 *.out
 *.app
 
+# CMake build outputs
+/build/
+/CMakeCache.txt
+/CMakeFiles/
+/Testing/
+/cmake_install.cmake
+/install_manifest.txt
+/compile_commands.json
+
 # Sourcetrial files
 TMFQSfullState.srctrlbm
 TMFQSfullState.srctrldb

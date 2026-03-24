@@ -1,12 +1,12 @@
 # TMFQS
 
-TMFQS is a C++17 state-vector quantum simulator for learning, experimentation, and backend strategy research. It provides a shared library (`libtmfqsfs.so`), public C++ headers (`tmfqsfs.h`), example binaries, integration tests, and backend benchmarking tools.
+TMFQS is a C++17 state-vector quantum simulator for learning, experimentation, and backend strategy research. It provides a shared library (`tmfqsfs`), public C++ headers (`tmfqsfs.h`), example binaries, integration tests, and backend benchmarking tools.
 
 ## What You Get
 
-- A C++ shared library built from `src/` and installed to `lib64/libtmfqsfs.so`
+- A C++ library built from `src/` and emitted under the selected CMake build directory
 - Public API headers under `include/` with umbrella include `tmfqsfs.h`
-- Example programs in `examples/` compiled into `bin/`
+- Example programs in `examples/` compiled into `build/<preset>/bin/`
 - Integration test suites in `tests/integration/`
 - Runtime-selectable storage backends: Dense, Blosc, ZFP, and Auto
 - Benchmark tools in `benchmarks/` for backend performance and regression checks
@@ -15,14 +15,13 @@ TMFQS is a C++17 state-vector quantum simulator for learning, experimentation, a
 
 This repository is currently documented for Linux only (verified workflow).
 
-- Compiler: Intel oneAPI `icpx` (auto-detected if available) or `g++` with C++17 support
-- Build tool: GNU Make
-- Runtime: shared-library loading via `LD_LIBRARY_PATH`
+- Compiler: any C++17 compiler, for example Intel oneAPI `icpx` or `g++`
+- Build tools: CMake >= 3.21 and a native build tool supported by CMake
 - Optional backend dependencies:
   - Blosc2 (`blosc2.h`, `libblosc2`) to enable the Blosc backend
   - ZFP (`zfp.h`, `libzfp`) to enable the ZFP backend
 
-If optional headers are not found during build, the corresponding backend is not compiled in.
+If optional dependencies are not found during configure, the corresponding backend is not compiled in unless you force it with `TMFQS_WITH_BLOSC2=ON` or `TMFQS_WITH_ZFP=ON`.
 
 ## Quickstart
 
@@ -30,52 +29,66 @@ If optional headers are not found during build, the corresponding backend is not
 git clone https://github.com/diaztoro/TMFQS.git
 cd TMFQS
 
-make
-make tests
+cmake --preset dev
+cmake --build --preset dev
+ctest --preset dev
 
-export LD_LIBRARY_PATH="$PWD/lib64:${LD_LIBRARY_PATH}"
-./bin/grover 3 5
+./build/dev/bin/grover 3 5
 ```
 
-Expected result: the program runs Grover search for state `|5>` in a 3-qubit space and prints the measured state.
+Expected result: the program runs Grover search for state `|5>` in a 3-qubit space and prints the resolved backend and measured state.
 
 ## Usage
 
-Before running binaries from `bin/`, export the library path once per shell session:
-
-```bash
-export LD_LIBRARY_PATH="$PWD/lib64:${LD_LIBRARY_PATH}"
-```
+Preset builds place runnable binaries in `build/<preset>/bin/`. The build tree is configured so local binaries run without setting `LD_LIBRARY_PATH`.
 
 ### Binary Quick Reference
 
 ```bash
-./bin/qft <num_qubits> <initial_state>
-./bin/grover <num_qubits> <marked_state>
-./bin/applyHadamard <num_qubits> <qubit> <init_state>
-./bin/applyControlledNot <num_qubits> <control_qubit> <target_qubit>
-./bin/applyControlledPhaseShift <num_qubits> <control_qubit> <target_qubit> <init_state>
-./bin/getSumOfProbabilities <num_qubits>
-./bin/qftG <num_qubits> [options]
+./build/dev/bin/qft <num_qubits> <initial_state>
+./build/dev/bin/grover <num_qubits> <marked_state[,marked_state...]> [options]
+./build/dev/bin/applyHadamard <num_qubits> <qubit> <init_state>
+./build/dev/bin/applyControlledNot <num_qubits> <control_qubit> <target_qubit>
+./build/dev/bin/applyControlledPhaseShift <num_qubits> <control_qubit> <target_qubit> <init_state>
+./build/dev/bin/getSumOfProbabilities <num_qubits>
+./build/dev/bin/qftG <num_qubits> [options]
 ```
 
 ### Example Commands
 
 ```bash
-./bin/qft 3 0
-./bin/grover 4 11
-./bin/applyHadamard 3 1 0
-./bin/applyControlledNot 3 0 2
-./bin/applyControlledPhaseShift 3 0 2 0
-./bin/getSumOfProbabilities 5
+./build/dev/bin/qft 3 0
+./build/dev/bin/grover 4 11
+./build/dev/bin/grover 22 17,131071 --strategy blosc --chunk-states 16384 --cache-slots 8
+./build/dev/bin/applyHadamard 3 1 0
+./build/dev/bin/applyControlledNot 3 0 2
+./build/dev/bin/applyControlledPhaseShift 3 0 2 0
+./build/dev/bin/getSumOfProbabilities 5
 ```
+
+## `grover` CLI Reference
+
+Usage:
+
+```bash
+./build/dev/bin/grover <num_qubits> <marked_state[,marked_state...]> [--verbose] \
+  [--strategy dense|blosc|zfp|auto] [--chunk-states N] [--cache-slots N] \
+  [--clevel N] [--nthreads N] [--threshold-mb N] \
+  [--zfp-mode rate|precision|accuracy] [--zfp-rate R] [--zfp-precision B] \
+  [--zfp-accuracy A] [--zfp-chunk-states N] [--zfp-cache-slots N]
+```
+
+Notes:
+
+- Pass one marked state for classic Grover or a comma-separated list for a multi-marked oracle.
+- The backend options match `qftG`, and the program prints the resolved strategy before the measurement result.
 
 ## `qftG` CLI Reference
 
 Usage:
 
 ```bash
-./bin/qftG <num_qubits> [--strategy dense|blosc|zfp|auto] \
+./build/dev/bin/qftG <num_qubits> [--strategy dense|blosc|zfp|auto] \
   [--chunk-states N] [--cache-slots N] [--clevel N] [--nthreads N] \
   [--threshold-mb N] [--zfp-mode rate|precision|accuracy] [--zfp-rate R] \
   [--zfp-precision B] [--zfp-accuracy A] [--zfp-chunk-states N] \
@@ -102,10 +115,10 @@ Usage:
 Examples:
 
 ```bash
-./bin/qftG 22 --strategy dense
-./bin/qftG 22 --strategy blosc --chunk-states 16384 --clevel 1 --nthreads 2
-./bin/qftG 22 --strategy zfp --zfp-mode rate --zfp-rate 24 --zfp-chunk-states 32768
-./bin/qftG 22 --strategy auto --threshold-mb 8
+./build/dev/bin/qftG 22 --strategy dense
+./build/dev/bin/qftG 22 --strategy blosc --chunk-states 16384 --clevel 1 --nthreads 2
+./build/dev/bin/qftG 22 --strategy zfp --zfp-mode rate --zfp-rate 24 --zfp-chunk-states 32768
+./build/dev/bin/qftG 22 --strategy auto --threshold-mb 8
 ```
 
 ## Backend Strategies
@@ -164,7 +177,11 @@ int main() {
     QuantumRegister qftReg(3, 0);
     algorithms::qftInPlace(qftReg);
 
-    algorithms::GroverConfig cfg{5u, 3u, false};
+    RegisterConfig groverCfg;
+    groverCfg.strategy = StorageStrategyKind::Blosc;
+    groverCfg.blosc.chunkStates = 16384;
+    groverCfg.blosc.gateCacheSlots = 8;
+    algorithms::GroverConfig cfg{BasisStateList{5u, 11u}, 22u, false, groverCfg};
     Mt19937RandomSource rng(12345u);
     StateIndex measured = algorithms::groverSearch(cfg, rng);
 
@@ -210,66 +227,81 @@ int main() {
 ### Compile and Link Your Own Program
 
 ```bash
-icpx -std=c++17 my_program.cpp \
-  -I ./include \
-  -L ./lib64 -ltmfqsfs \
-  -o my_program
+cmake --install build/dev --prefix ./install
 
-export LD_LIBRARY_PATH="$PWD/lib64:${LD_LIBRARY_PATH}"
-./my_program
+icpx -std=c++17 my_program.cpp \
+  -I ./install/include \
+  -L ./install/lib64 -ltmfqsfs \
+  -Wl,-rpath,"$PWD/install/lib64" \
+  -o my_program
 ```
+
+### Use TMFQS From Another CMake Project
+
+```cmake
+find_package(TMFQS CONFIG REQUIRED)
+
+add_executable(my_program my_program.cpp)
+target_link_libraries(my_program PRIVATE TMFQS::tmfqsfs)
+```
+
+After installing TMFQS, configure your downstream project with `-DCMAKE_PREFIX_PATH=<install-prefix>`.
 
 ## Build, Test, and Benchmark Workflow
 
 All commands below run from repository root.
 
-### Build Library + Examples
+### Configure and Build
 
 ```bash
-make
+cmake --preset dev
+cmake --build --preset dev
 ```
 
 Build output highlights:
 
-- Shared library at `lib64/libtmfqsfs.so`
-- Example binaries in `bin/`
+- Shared library in `build/dev/lib/`
+- Example binaries in `build/dev/bin/`
 
 ### Run Integration Tests
 
 ```bash
-make tests
+ctest --preset dev
 ```
 
-This compiles and runs integration suites:
+This runs integration suites:
 
 - `test_algorithms`
 - `test_register_validation`
 - `test_storage_parity`
 - `test_storage_cache`
 
+### Release Build
+
+```bash
+cmake --preset release
+cmake --build --preset release
+```
+
+Use `build/release/bin/` for optimized binaries.
+
 ### Run Benchmarks
 
 ```bash
-make benchmarks
+./build/dev/bin/benchmark_backends
 ```
 
-This builds and runs `benchmark_backends`.
-
-### Performance-Oriented Build + Checks
-
-```bash
-make perf
-```
-
-This rebuilds with optimized flags and runs tests and benchmarks.
+This runs the benchmark executable produced by the `dev` or `release` preset.
 
 ### Sanitizer Build + Tests
 
 ```bash
-make sanitize
+cmake --preset asan
+cmake --build --preset asan
+ctest --preset asan
 ```
 
-This rebuilds with AddressSanitizer and UndefinedBehaviorSanitizer and runs tests.
+This configures AddressSanitizer and UndefinedBehaviorSanitizer through CMake target options.
 
 ## Performance Notes
 
@@ -287,13 +319,11 @@ This rebuilds with AddressSanitizer and UndefinedBehaviorSanitizer and runs test
 TMFQS/
 ├── include/            # Public headers (tmfqsfs.h + tmfqs/*)
 ├── src/                # Library implementation
-├── examples/           # Example programs -> bin/
+├── examples/           # Example programs
 ├── tests/              # Integration tests
-├── benchmarks/         # Benchmark sources and make targets
-├── bin/                # Built binaries
-├── build/              # Build artifacts
-├── lib64/              # Shared library output
-├── Makefile            # Top-level build/test/benchmark targets
+├── benchmarks/         # Benchmark sources
+├── build/              # CMake build trees
+├── cmake/              # Find modules and package config template
 └── README.md
 ```
 
@@ -315,4 +345,3 @@ Gilberto Javier Díaz Toro
 ## Contributors
 
 Daniel Adrián González Buendía
-

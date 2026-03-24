@@ -1,0 +1,85 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "dev",
+      "displayName": "Development",
+      "description": "Debug build with examples, tests, and benchmarks enabled",
+      "binaryDir": "${sourceDir}/build/dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "TMFQS_BUILD_EXAMPLES": "ON",
+        "TMFQS_BUILD_TESTS": "ON",
+        "TMFQS_BUILD_BENCHMARKS": "ON",
+        "TMFQS_WITH_BLOSC2": "AUTO",
+        "TMFQS_WITH_ZFP": "AUTO",
+        "TMFQS_ENABLE_SANITIZERS": "OFF"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "description": "Optimized release build with examples and benchmarks",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "TMFQS_BUILD_EXAMPLES": "ON",
+        "TMFQS_BUILD_TESTS": "OFF",
+        "TMFQS_BUILD_BENCHMARKS": "ON",
+        "TMFQS_WITH_BLOSC2": "AUTO",
+        "TMFQS_WITH_ZFP": "AUTO",
+        "TMFQS_ENABLE_SANITIZERS": "OFF"
+      }
+    },
+    {
+      "name": "asan",
+      "displayName": "ASan/UBSan",
+      "description": "Debug build with AddressSanitizer and UndefinedBehaviorSanitizer",
+      "binaryDir": "${sourceDir}/build/asan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "TMFQS_BUILD_EXAMPLES": "ON",
+        "TMFQS_BUILD_TESTS": "ON",
+        "TMFQS_BUILD_BENCHMARKS": "OFF",
+        "TMFQS_WITH_BLOSC2": "AUTO",
+        "TMFQS_WITH_ZFP": "AUTO",
+        "TMFQS_ENABLE_SANITIZERS": "address,undefined"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

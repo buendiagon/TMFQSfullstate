@@ -1,0 +1,6 @@
+add_executable(benchmark_backends benchmark_backends.cpp)
+target_link_libraries(benchmark_backends PRIVATE tmfqsfs)
+tmfqs_configure_runtime_target(benchmark_backends)
+
+add_executable(benchmark_regression_check benchmark_regression_check.cpp)
+tmfqs_configure_runtime_target(benchmark_regression_check)
