@@ -93,6 +93,10 @@ int chooseBloscThreads(size_t totalBytes, StorageWorkloadHint hint) {
 	return totalBytes >= (64u * 1024u * 1024u) ? static_cast<int>(std::min<unsigned int>(hw, 2u)) : 1;
 }
 
+int chooseZfpThreads(size_t totalBytes, StorageWorkloadHint hint) {
+	return chooseBloscThreads(totalBytes, hint);
+}
+
 } // namespace
 
 /** @brief Resolves effective storage strategy from config and availability. */
@@ -193,6 +197,9 @@ RegisterConfig StorageStrategyRegistry::tuneConfig(
 			const ZfpConfig defaultZfp;
 			if(!tuned.zfpOverrides.chunkStates && tuned.zfp.chunkStates == defaultZfp.chunkStates) {
 				tuned.zfp.chunkStates = chooseChunkStates(totalStates, tuned.workloadHint);
+			}
+			if(!tuned.zfpOverrides.nthreads && tuned.zfp.nthreads == defaultZfp.nthreads) {
+				tuned.zfp.nthreads = chooseZfpThreads(totalBytes, tuned.workloadHint);
 			}
 			if(!tuned.zfpOverrides.gateCacheSlots && tuned.zfp.gateCacheSlots == defaultZfp.gateCacheSlots) {
 				tuned.zfp.gateCacheSlots = chooseCacheSlots(totalStates, tuned.zfp.chunkStates, tuned.workloadHint);

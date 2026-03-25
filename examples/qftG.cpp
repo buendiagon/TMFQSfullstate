@@ -125,6 +125,8 @@ static bool parseArgs(int argc, char *argv[], CliOptions &optionsOut) {
 			if(i + 1 >= argc || !parseUnsigned(argv[++i], value) || value == 0) return false;
 			optionsOut.registerConfig.blosc.nthreads = static_cast<int>(value);
 			optionsOut.registerConfig.bloscOverrides.nthreads = true;
+			optionsOut.registerConfig.zfp.nthreads = static_cast<int>(value);
+			optionsOut.registerConfig.zfpOverrides.nthreads = true;
 			continue;
 		}
 		if(arg == "--threshold-mb") {

@@ -64,15 +64,17 @@ struct BloscTuningOverrides {
 /** @brief Runtime configuration for the ZFP backend. */
 struct ZfpConfig {
 	/** @brief Active compression control mode. */
-	ZfpCompressionMode mode = ZfpCompressionMode::FixedRate;
+	ZfpCompressionMode mode = ZfpCompressionMode::FixedPrecision;
 	/** @brief Target compressed rate used in fixed-rate mode. */
 	double rate = 32.0;
 	/** @brief Target precision in bits used in fixed-precision mode. */
-	unsigned int precision = 32;
+	unsigned int precision = 40;
 	/** @brief Target absolute error used in fixed-accuracy mode. */
 	double accuracy = 1e-8;
 	/** @brief Number of basis states grouped into one compressed chunk. */
 	size_t chunkStates = 16384;
+	/** @brief Number of threads used by ZFP execution. */
+	int nthreads = 1;
 	/** @brief Number of decompressed chunks cached during gate application. */
 	size_t gateCacheSlots = 8;
 };
@@ -84,6 +86,7 @@ struct ZfpTuningOverrides {
 	bool precision = false;
 	bool accuracy = false;
 	bool chunkStates = false;
+	bool nthreads = false;
 	bool gateCacheSlots = false;
 };
 

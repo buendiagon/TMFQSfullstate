@@ -51,6 +51,10 @@ class ZfpCodec {
 	private:
 		/** @brief Register configuration with ZFP compression parameters. */
 		RegisterConfig cfg_;
+		/** @brief Effective compression thread count after runtime fallback checks. */
+		mutable int compressionThreads_ = 1;
+		/** @brief Effective decompression thread count after runtime fallback checks. */
+		mutable int decompressionThreads_ = 1;
 		/** @brief Reusable temporary output buffer used during compression. */
 		mutable std::vector<uint8_t> compressionScratch_;
 		/** @brief Lazily initialized reusable ZFP codec state. */

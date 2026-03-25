@@ -150,13 +150,6 @@ class ZfpStateBackend final : public IStateBackend {
 				[&](size_t index) { return chunkElemCount(index); });
 		}
 
-		/** @brief Flushes cache only when not inside an operation batch. */
-		void flushCacheIfNeeded() {
-			if(batchDepth_ == 0u) {
-				flushCache();
-			}
-		}
-
 		/** @brief Applies inversion-about-mean with a known mean inside one mutate scope. */
 		void applyInversionAboutMeanWithMean(Amplitude mean) {
 			for(size_t chunkIndex = 0; chunkIndex < chunks_.size(); ++chunkIndex) {
@@ -192,12 +185,10 @@ class ZfpStateBackend final : public IStateBackend {
 		}
 
 		template <typename MutateFn>
-		/** @brief Runs one mutating action and conditionally flushes pending writes. */
+		/** @brief Runs one mutating action under the write-back hot cache. */
 		void mutate(const char *operation, MutateFn mutateFn) {
 			ensureInitialized(operation);
 			mutateFn();
-			// Outside batches, keep compressed storage immediately consistent.
-			flushCacheIfNeeded();
 		}
 
 		template <typename PairFn>
@@ -289,7 +280,6 @@ class ZfpStateBackend final : public IStateBackend {
 			initZero(numQubits);
 			storage::validateBackendStateIndex("ZfpStateBackend::initBasis", initState, numStates_);
 			writeAmplitudeMutable(initState, amp);
-			flushCache();
 		}
 
 		/** @brief Initializes equal superposition over selected basis states. */
@@ -597,11 +587,8 @@ class ZfpStateBackend final : public IStateBackend {
 				throw std::logic_error("ZfpStateBackend::endOperationBatch called without matching beginOperationBatch");
 			}
 			--batchDepth_;
-			if(batchDepth_ == 0u) {
-				flushCache();
-			}
 		}
-};
+	};
 
 } // namespace
 #endif

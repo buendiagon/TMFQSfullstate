@@ -164,6 +164,39 @@ void testZfpRegisterCopySemantics() {
 	TMFQS_TEST_REQUIRE(std::abs(copiedStateBefore.imag - copiedStateAfter.imag) < 1e-9);
 }
 
+void testZfpThreadedRoundTripFallback() {
+	using namespace tmfqs;
+	std::cout << "=== zfp threaded round-trip fallback ===\n";
+	if(!StorageStrategyRegistry::isAvailable(StorageStrategyKind::Zfp)) {
+		std::cout << "Zfp backend unavailable in this build, skipping threaded zfp test.\n";
+		return;
+	}
+
+	RegisterConfig denseCfg;
+	denseCfg.strategy = StorageStrategyKind::Dense;
+	RegisterConfig zfpCfg;
+	zfpCfg.strategy = StorageStrategyKind::Zfp;
+	zfpCfg.zfp.mode = ZfpCompressionMode::FixedPrecision;
+	zfpCfg.zfp.precision = 40u;
+	zfpCfg.zfp.chunkStates = 8u;
+	zfpCfg.zfp.gateCacheSlots = 4u;
+	zfpCfg.zfp.nthreads = 2;
+	zfpCfg.zfpOverrides.nthreads = true;
+
+	QuantumRegister denseReg(5, 0, denseCfg);
+	QuantumRegister zfpReg(5, 0, zfpCfg);
+	const std::vector<algorithms::AlgorithmOperation> ops = {
+		algorithms::HadamardOp{0},
+		algorithms::ControlledNotOp{0, 3},
+		algorithms::ControlledPhaseShiftOp{3, 4, kPi / 11.0},
+		algorithms::PhaseFlipBasisStateOp{19},
+		algorithms::InversionAboutMeanOp{}
+	};
+	algorithms::executeOperations(denseReg, ops);
+	algorithms::executeOperations(zfpReg, ops);
+	tmfqs_test::assertRegistersClose(denseReg, zfpReg, 5e-4);
+}
+
 void testBackendAutoTuningHeuristics() {
 	using namespace tmfqs;
 	std::cout << "=== backend auto tuning ===\n";
@@ -175,16 +208,20 @@ void testBackendAutoTuningHeuristics() {
 		StorageStrategyRegistry::tuneConfig(20, zfpCfg, StorageStrategyKind::Zfp);
 	TMFQS_TEST_REQUIRE(tunedZfp.zfp.chunkStates == 32768u);
 	TMFQS_TEST_REQUIRE(tunedZfp.zfp.gateCacheSlots == 8u);
+	TMFQS_TEST_REQUIRE(tunedZfp.zfp.nthreads >= 1);
 
 	RegisterConfig explicitZfpCfg = zfpCfg;
 	explicitZfpCfg.zfp.chunkStates = 16384u;
+	explicitZfpCfg.zfp.nthreads = 1;
 	explicitZfpCfg.zfp.gateCacheSlots = 8u;
 	explicitZfpCfg.zfpOverrides.chunkStates = true;
+	explicitZfpCfg.zfpOverrides.nthreads = true;
 	explicitZfpCfg.zfpOverrides.gateCacheSlots = true;
 	const RegisterConfig preservedZfp =
 		StorageStrategyRegistry::tuneConfig(20, explicitZfpCfg, StorageStrategyKind::Zfp);
 	TMFQS_TEST_REQUIRE(preservedZfp.zfp.chunkStates == 16384u);
 	TMFQS_TEST_REQUIRE(preservedZfp.zfp.gateCacheSlots == 8u);
+	TMFQS_TEST_REQUIRE(preservedZfp.zfp.nthreads == 1);
 
 	RegisterConfig bloscCfg;
 	bloscCfg.strategy = StorageStrategyKind::Blosc;
@@ -250,6 +287,7 @@ int main() {
 	testApplyGateBuiltinDispatchParity();
 	testDenseVsZfpSmoke();
 	testZfpRegisterCopySemantics();
+	testZfpThreadedRoundTripFallback();
 	testBackendAutoTuningHeuristics();
 	std::cout << "Storage parity tests passed.\n";
 	return 0;
