@@ -202,6 +202,14 @@ class QuantumRegister {
 		StorageStrategyKind resolvedStrategy_ = StorageStrategyKind::Dense;
 		/** @brief Active state backend implementation. */
 		std::unique_ptr<IStateBackend> backend_;
+		/** @brief Nesting depth of operation batches opened on this register. */
+		unsigned int batchDepth_ = 0;
+		/** @brief Global affine scale used to lazily represent repeated full-register transforms. */
+		Amplitude affineScale_{1.0, 0.0};
+		/** @brief Global affine bias used to lazily represent repeated full-register transforms. */
+		Amplitude affineBias_{0.0, 0.0};
+		/** @brief Indicates whether lazy affine overlay is active over backend storage. */
+		bool affineOverlayActive_ = false;
 
 		/**
 		 * @brief Creates backend instance and updates cached size metadata.
@@ -213,6 +221,20 @@ class QuantumRegister {
 		 * @param operation Name of the operation requesting initialized state.
 		 */
 		void requireInitialized(const char *operation) const;
+		/** @brief Returns whether the active backend benefits from lazy affine overlays. */
+		bool supportsAffineOverlay() const;
+		/** @brief Resets lazy affine overlay state to identity. */
+		void resetAffineOverlay();
+		/** @brief Writes the logical affine-transformed state back into backend tiles. */
+		void flushAffineOverlay();
+		/** @brief Applies the lazy affine overlay to one backend amplitude value. */
+		Amplitude applyAffineOverlay(Amplitude backendAmplitude) const;
+		/** @brief Converts one logical amplitude through the inverse affine overlay. */
+		Amplitude removeAffineOverlay(Amplitude logicalAmplitude) const;
+		/** @brief Computes the sum of all logical amplitudes, including any lazy overlay. */
+		Amplitude logicalAmplitudeSum() const;
+		/** @brief Exports the current logical state, including any lazy overlay. */
+		AmplitudesVector snapshotLogicalAmplitudes() const;
 };
 
 } // namespace tmfqs

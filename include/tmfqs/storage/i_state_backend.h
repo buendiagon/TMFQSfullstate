@@ -1,6 +1,7 @@
 #ifndef TMFQS_STORAGE_I_STATE_BACKEND_H
 #define TMFQS_STORAGE_I_STATE_BACKEND_H
 
+#include <cstddef>
 #include <iosfwd>
 #include <memory>
 
@@ -49,7 +50,34 @@ class IStateBackend {
 		 * @param numQubits Register size.
 		 * @param amplitudes Interleaved amplitudes `[real0, imag0, ...]`.
 		 */
-		virtual void loadAmplitudes(unsigned int numQubits, AmplitudesVector amplitudes) = 0;
+		virtual void loadAmplitudes(unsigned int numQubits, const AmplitudesVector &amplitudes) = 0;
+		/**
+		 * @brief Exports the full interleaved amplitude vector.
+		 * @return Interleaved amplitudes `[real0, imag0, ...]`.
+		 */
+		virtual AmplitudesVector exportAmplitudes() const = 0;
+		/**
+		 * @brief Returns the number of streamable storage tiles/chunks in the backend.
+		 * @return Tile count.
+		 */
+		virtual size_t tileCount() const = 0;
+		/**
+		 * @brief Reads one storage tile/chunk as interleaved amplitudes.
+		 * @param tileIndex Tile/chunk index.
+		 * @param amplitudes Receives interleaved amplitudes for the requested tile.
+		 */
+		virtual void readTile(size_t tileIndex, AmplitudesVector &amplitudes) const = 0;
+		/**
+		 * @brief Writes one storage tile/chunk from interleaved amplitudes.
+		 * @param tileIndex Tile/chunk index.
+		 * @param amplitudes Interleaved amplitudes for the requested tile.
+		 */
+		virtual void writeTile(size_t tileIndex, const AmplitudesVector &amplitudes) = 0;
+		/**
+		 * @brief Returns a direct read-only view of contiguous amplitudes when available.
+		 * @return Pointer to backend-owned interleaved amplitudes, or `nullptr` if unavailable.
+		 */
+		virtual const AmplitudesVector *contiguousAmplitudeView() const { return nullptr; }
 
 		/**
 		 * @brief Reads amplitude for one basis state.

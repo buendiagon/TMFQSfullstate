@@ -197,6 +197,62 @@ void testZfpThreadedRoundTripFallback() {
 	tmfqs_test::assertRegistersClose(denseReg, zfpReg, 5e-4);
 }
 
+void runCompressedAffineOverlayCase(const tmfqs::RegisterConfig &cfg, double tol) {
+	using namespace tmfqs;
+	RegisterConfig denseCfg;
+	denseCfg.strategy = StorageStrategyKind::Dense;
+
+	QuantumRegister denseReg(6, 0, denseCfg);
+	QuantumRegister compressedReg(6, 0, cfg);
+
+	denseReg.beginOperationBatch();
+	compressedReg.beginOperationBatch();
+	for(unsigned int q = 0; q < denseReg.qubitCount(); ++q) {
+		denseReg.applyHadamard(q);
+		compressedReg.applyHadamard(q);
+	}
+
+	for(unsigned int iter = 0; iter < 4u; ++iter) {
+		const Amplitude denseProbe = denseReg.amplitude(5);
+		const Amplitude compressedProbe = compressedReg.amplitude(5);
+		TMFQS_TEST_REQUIRE(std::abs(denseProbe.real - compressedProbe.real) < tol);
+		TMFQS_TEST_REQUIRE(std::abs(denseProbe.imag - compressedProbe.imag) < tol);
+		denseReg.applyPhaseFlipBasisState(5);
+		compressedReg.applyPhaseFlipBasisState(5);
+		denseReg.applyInversionAboutMean();
+		compressedReg.applyInversionAboutMean();
+	}
+	denseReg.endOperationBatch();
+	compressedReg.endOperationBatch();
+
+	tmfqs_test::assertRegistersClose(denseReg, compressedReg, tol);
+}
+
+void testCompressedAffineOverlayParity() {
+	using namespace tmfqs;
+	std::cout << "=== compressed affine overlay parity ===\n";
+	if(StorageStrategyRegistry::isAvailable(StorageStrategyKind::Blosc)) {
+		RegisterConfig bloscCfg;
+		bloscCfg.strategy = StorageStrategyKind::Blosc;
+		bloscCfg.blosc.chunkStates = 4u;
+		bloscCfg.blosc.gateCacheSlots = 2u;
+		runCompressedAffineOverlayCase(bloscCfg, 1e-9);
+	} else {
+		std::cout << "Blosc backend unavailable, skipping blosc affine overlay test.\n";
+	}
+	if(StorageStrategyRegistry::isAvailable(StorageStrategyKind::Zfp)) {
+		RegisterConfig zfpCfg;
+		zfpCfg.strategy = StorageStrategyKind::Zfp;
+		zfpCfg.zfp.mode = ZfpCompressionMode::FixedRate;
+		zfpCfg.zfp.rate = 24.0;
+		zfpCfg.zfp.chunkStates = 4u;
+		zfpCfg.zfp.gateCacheSlots = 2u;
+		runCompressedAffineOverlayCase(zfpCfg, 7e-3);
+	} else {
+		std::cout << "Zfp backend unavailable, skipping zfp affine overlay test.\n";
+	}
+}
+
 void testBackendAutoTuningHeuristics() {
 	using namespace tmfqs;
 	std::cout << "=== backend auto tuning ===\n";
@@ -288,6 +344,7 @@ int main() {
 	testDenseVsZfpSmoke();
 	testZfpRegisterCopySemantics();
 	testZfpThreadedRoundTripFallback();
+	testCompressedAffineOverlayParity();
 	testBackendAutoTuningHeuristics();
 	std::cout << "Storage parity tests passed.\n";
 	return 0;

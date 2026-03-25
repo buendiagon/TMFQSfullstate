@@ -115,13 +115,52 @@ class DenseStateBackend final : public IStateBackend {
 		}
 
 		/** @brief Loads a full interleaved amplitude buffer into backend storage. */
-		void loadAmplitudes(unsigned int numQubits, AmplitudesVector amplitudes) override {
+		void loadAmplitudes(unsigned int numQubits, const AmplitudesVector &amplitudes) override {
 			numQubits_ = numQubits;
 			numStates_ = checkedStateCount(numQubits_);
 			if(amplitudes.size() != checkedAmplitudeElementCount(numQubits_)) {
 				throw std::invalid_argument("DenseStateBackend: amplitudes size mismatch");
 			}
-			amplitudes_ = std::move(amplitudes);
+			amplitudes_ = amplitudes;
+		}
+
+		/** @brief Exports the full interleaved amplitude buffer. */
+		AmplitudesVector exportAmplitudes() const override {
+			ensureInitialized("amplitude export");
+			return amplitudes_;
+		}
+
+		/** @brief Returns the number of streamable tiles for dense storage. */
+		size_t tileCount() const override {
+			ensureInitialized("tile count query");
+			return 1u;
+		}
+
+		/** @brief Reads the dense storage as the only tile. */
+		void readTile(size_t tileIndex, AmplitudesVector &amplitudes) const override {
+			ensureInitialized("tile read");
+			if(tileIndex != 0u) {
+				throw std::out_of_range("DenseStateBackend::readTile tile index out of range");
+			}
+			amplitudes = amplitudes_;
+		}
+
+		/** @brief Writes the dense storage through the only tile. */
+		void writeTile(size_t tileIndex, const AmplitudesVector &amplitudes) override {
+			ensureInitialized("tile write");
+			if(tileIndex != 0u) {
+				throw std::out_of_range("DenseStateBackend::writeTile tile index out of range");
+			}
+			if(amplitudes.size() != amplitudes_.size()) {
+				throw std::invalid_argument("DenseStateBackend::writeTile amplitudes size mismatch");
+			}
+			amplitudes_ = amplitudes;
+		}
+
+		/** @brief Exposes the dense storage as a contiguous read-only view. */
+		const AmplitudesVector *contiguousAmplitudeView() const override {
+			ensureInitialized("contiguous amplitude view");
+			return &amplitudes_;
 		}
 
 		/** @brief Returns complex amplitude for one basis state. */

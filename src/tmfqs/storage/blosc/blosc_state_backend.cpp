@@ -401,7 +401,7 @@ class BloscStateBackend final : public IStateBackend {
 		}
 
 		/** @brief Loads complete amplitude vector into compressed chunk storage. */
-		void loadAmplitudes(unsigned int numQubits, AmplitudesVector amplitudes) override {
+		void loadAmplitudes(unsigned int numQubits, const AmplitudesVector &amplitudes) override {
 			const unsigned int stateCount = checkedStateCount(numQubits);
 			if(amplitudes.size() != checkedAmplitudeElementCount(numQubits)) {
 				throw std::invalid_argument("BloscStateBackend: amplitudes size mismatch");
@@ -415,6 +415,58 @@ class BloscStateBackend final : public IStateBackend {
 				const size_t statesInChunk = std::min(layout_.statesPerChunk(), static_cast<size_t>(numStates_) - baseState);
 				codec_.appendChunk(amplitudes.data() + baseState * 2u, statesInChunk * 2u, "BloscStateBackend::loadAmplitudes");
 			}
+		}
+
+		/** @brief Exports the full register by decoding each chunk once. */
+		AmplitudesVector exportAmplitudes() const override {
+			ensureInitialized("amplitude export");
+			AmplitudesVector amplitudes(checkedAmplitudeElementCount(numQubits_), 0.0);
+			std::vector<double> buffer;
+			size_t dstOffset = 0u;
+			for(size_t chunkIndex = 0; chunkIndex < layout_.chunkCount(); ++chunkIndex) {
+				const size_t elemCount = chunkElemCount(chunkIndex);
+				const std::vector<double> *cached = cache_.findBuffer(chunkIndex);
+				const double *data = nullptr;
+				if(cached) {
+					data = cached->data();
+				} else {
+					codec_.readChunk(chunkIndex, buffer, elemCount);
+					data = buffer.data();
+				}
+				std::copy_n(data, elemCount, amplitudes.data() + dstOffset);
+				dstOffset += elemCount;
+			}
+			return amplitudes;
+		}
+
+		/** @brief Returns the number of chunk tiles in compressed storage. */
+		size_t tileCount() const override {
+			ensureInitialized("tile count query");
+			return layout_.chunkCount();
+		}
+
+		/** @brief Reads one compressed chunk tile. */
+		void readTile(size_t tileIndex, AmplitudesVector &amplitudes) const override {
+			ensureInitialized("tile read");
+			const size_t elemCount = chunkElemCount(tileIndex);
+			if(const std::vector<double> *cached = cache_.findBuffer(tileIndex)) {
+				amplitudes = *cached;
+				return;
+			}
+			codec_.readChunk(tileIndex, amplitudes, elemCount);
+		}
+
+		/** @brief Writes one compressed chunk tile through the cache path. */
+		void writeTile(size_t tileIndex, const AmplitudesVector &amplitudes) override {
+			ensureInitialized("tile write");
+			const size_t elemCount = chunkElemCount(tileIndex);
+			if(amplitudes.size() != elemCount) {
+				throw std::invalid_argument("BloscStateBackend::writeTile amplitudes size mismatch");
+			}
+			auto slot = acquireChunk(tileIndex);
+			std::copy(amplitudes.begin(), amplitudes.end(), slot.data);
+			*slot.dirty = true;
+			flushCacheIfNeeded();
 		}
 
 		/** @brief Reads one basis-state amplitude. */

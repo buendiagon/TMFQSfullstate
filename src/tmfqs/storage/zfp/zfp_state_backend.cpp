@@ -150,6 +150,13 @@ class ZfpStateBackend final : public IStateBackend {
 				[&](size_t index) { return chunkElemCount(index); });
 		}
 
+		/** @brief Flushes cache only when not inside an operation batch. */
+		void flushCacheIfNeeded() {
+			if(batchDepth_ == 0u) {
+				flushCache();
+			}
+		}
+
 		/** @brief Applies inversion-about-mean with a known mean inside one mutate scope. */
 		void applyInversionAboutMeanWithMean(Amplitude mean) {
 			for(size_t chunkIndex = 0; chunkIndex < chunks_.size(); ++chunkIndex) {
@@ -189,6 +196,7 @@ class ZfpStateBackend final : public IStateBackend {
 		void mutate(const char *operation, MutateFn mutateFn) {
 			ensureInitialized(operation);
 			mutateFn();
+			flushCacheIfNeeded();
 		}
 
 		template <typename PairFn>
@@ -319,7 +327,7 @@ class ZfpStateBackend final : public IStateBackend {
 		}
 
 		/** @brief Loads complete amplitude vector into compressed chunk storage. */
-		void loadAmplitudes(unsigned int numQubits, AmplitudesVector amplitudes) override {
+		void loadAmplitudes(unsigned int numQubits, const AmplitudesVector &amplitudes) override {
 			configureStorage(numQubits);
 			if(amplitudes.size() != checkedAmplitudeElementCount(numQubits_)) {
 				throw std::invalid_argument("ZfpStateBackend: amplitudes size mismatch");
@@ -330,6 +338,61 @@ class ZfpStateBackend final : public IStateBackend {
 				const size_t begin = chunkIndex * fullChunkElems;
 				codec_.compress(amplitudes.data() + begin, chunk.elemCount, chunk.compressed);
 			}
+		}
+
+		/** @brief Exports the full register by decoding each chunk once. */
+		AmplitudesVector exportAmplitudes() const override {
+			ensureInitialized("amplitude export");
+			AmplitudesVector amplitudes(checkedAmplitudeElementCount(numQubits_), 0.0);
+			std::vector<double> scratch;
+			size_t dstOffset = 0u;
+			for(size_t chunkIndex = 0; chunkIndex < chunks_.size(); ++chunkIndex) {
+				const std::vector<double> *cached = cache_.findBuffer(chunkIndex);
+				const double *data = nullptr;
+				if(cached) {
+					data = cached->data();
+				} else {
+					codec_.decompress(chunks_[chunkIndex].compressed, chunks_[chunkIndex].elemCount, scratch);
+					data = scratch.data();
+				}
+				std::copy_n(data, chunks_[chunkIndex].elemCount, amplitudes.data() + dstOffset);
+				dstOffset += chunks_[chunkIndex].elemCount;
+			}
+			return amplitudes;
+		}
+
+		/** @brief Returns the number of chunk tiles in compressed storage. */
+		size_t tileCount() const override {
+			ensureInitialized("tile count query");
+			return chunks_.size();
+		}
+
+		/** @brief Reads one compressed chunk tile. */
+		void readTile(size_t tileIndex, AmplitudesVector &amplitudes) const override {
+			ensureInitialized("tile read");
+			if(tileIndex >= chunks_.size()) {
+				throw std::out_of_range("ZfpStateBackend::readTile tile index out of range");
+			}
+			if(const std::vector<double> *cached = cache_.findBuffer(tileIndex)) {
+				amplitudes = *cached;
+				return;
+			}
+			codec_.decompress(chunks_[tileIndex].compressed, chunks_[tileIndex].elemCount, amplitudes);
+		}
+
+		/** @brief Writes one compressed chunk tile through the cache path. */
+		void writeTile(size_t tileIndex, const AmplitudesVector &amplitudes) override {
+			ensureInitialized("tile write");
+			if(tileIndex >= chunks_.size()) {
+				throw std::out_of_range("ZfpStateBackend::writeTile tile index out of range");
+			}
+			if(amplitudes.size() != chunks_[tileIndex].elemCount) {
+				throw std::invalid_argument("ZfpStateBackend::writeTile amplitudes size mismatch");
+			}
+			auto slot = acquireChunk(tileIndex);
+			std::copy(amplitudes.begin(), amplitudes.end(), slot.data);
+			*slot.dirty = true;
+			flushCacheIfNeeded();
 		}
 
 		/** @brief Reads one basis-state amplitude. */
@@ -587,6 +650,9 @@ class ZfpStateBackend final : public IStateBackend {
 				throw std::logic_error("ZfpStateBackend::endOperationBatch called without matching beginOperationBatch");
 			}
 			--batchDepth_;
+			if(batchDepth_ == 0u) {
+				flushCache();
+			}
 		}
 	};
 
