@@ -29,6 +29,7 @@ void QuantumRegister::initializeBackend(unsigned int qubits) {
 	numStates_ = checkedStateCount(numQubits_);
 	// Selection captures both resolved strategy and matching backend instance.
 	BackendSelection selection = StateBackendFactory::createSelection(numQubits_, config_);
+	config_ = selection.config;
 	resolvedStrategy_ = selection.strategy;
 	backend_ = std::move(selection.backend);
 }
@@ -199,6 +200,12 @@ void QuantumRegister::applyPhaseFlipBasisState(StateIndex state) {
 void QuantumRegister::applyInversionAboutMean() {
 	requireInitialized("inversion about mean");
 	backend_->inversionAboutMean();
+}
+
+/** @brief Applies inversion-about-mean using a precomputed mean amplitude. */
+void QuantumRegister::applyInversionAboutMean(Amplitude mean) {
+	requireInitialized("inversion about mean");
+	backend_->inversionAboutMean(mean);
 }
 
 /** @brief Applies Hadamard to one qubit. */

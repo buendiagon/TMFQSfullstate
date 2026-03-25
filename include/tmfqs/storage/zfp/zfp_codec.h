@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "tmfqs/config/register_config.h"
@@ -15,11 +16,16 @@ namespace storage {
  */
 class ZfpCodec {
 	public:
+		struct Impl;
+
 		/**
 		 * @brief Constructs a codec and validates ZFP configuration values.
 		 * @param cfg Register configuration containing ZFP options.
 		 */
 		explicit ZfpCodec(const RegisterConfig &cfg);
+		ZfpCodec(const ZfpCodec &other);
+		ZfpCodec &operator=(const ZfpCodec &other);
+		~ZfpCodec();
 
 		/**
 		 * @brief Validates ZFP-related configuration values.
@@ -47,6 +53,8 @@ class ZfpCodec {
 		RegisterConfig cfg_;
 		/** @brief Reusable temporary output buffer used during compression. */
 		mutable std::vector<uint8_t> compressionScratch_;
+		/** @brief Lazily initialized reusable ZFP codec state. */
+		mutable std::unique_ptr<Impl> impl_;
 };
 
 } // namespace storage

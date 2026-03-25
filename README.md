@@ -21,6 +21,8 @@ This repository is currently documented for Linux only (verified workflow).
   - Blosc2 (`blosc2.h`, `libblosc2`) to enable the Blosc backend
   - ZFP (`zfp.h`, `libzfp`) to enable the ZFP backend
 
+When CMake configures the project without an explicit compiler selection, TMFQS prefers Intel oneAPI `icpx` and falls back to `g++` if `icpx` is not available. You can still override this with `CXX=...` or `-DCMAKE_CXX_COMPILER=...`.
+
 If optional dependencies are not found during configure, the corresponding backend is not compiled in unless you force it with `TMFQS_WITH_BLOSC2=ON` or `TMFQS_WITH_ZFP=ON`.
 
 ## Quickstart
@@ -37,6 +39,8 @@ ctest --preset dev
 ```
 
 Expected result: the program runs Grover search for state `|5>` in a 3-qubit space and prints the resolved backend and measured state.
+
+`dev` is the recommended day-to-day preset: it uses `RelWithDebInfo` so the examples stay fast while preserving symbols for profiling and debugging. Use `debug` when you specifically need an unoptimized `-O0` build.
 
 ## Usage
 
@@ -263,6 +267,13 @@ Build output highlights:
 - Shared library in `build/dev/lib/`
 - Example binaries in `build/dev/bin/`
 
+For an unoptimized debug build:
+
+```bash
+cmake --preset debug
+cmake --build --preset debug
+```
+
 ### Run Integration Tests
 
 ```bash
@@ -283,7 +294,7 @@ cmake --preset release
 cmake --build --preset release
 ```
 
-Use `build/release/bin/` for optimized binaries.
+Use `build/release/bin/` for fully optimized binaries. The `dev` preset is already optimized enough for normal local runs and tests.
 
 ### Run Benchmarks
 

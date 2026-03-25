@@ -95,6 +95,11 @@ class IStateBackend {
 		/** @brief Applies inversion about mean to all amplitudes. */
 		virtual void inversionAboutMean() = 0;
 		/**
+		 * @brief Applies inversion about mean using a caller-provided mean amplitude.
+		 * @param mean Mean complex amplitude across the full register.
+		 */
+		virtual void inversionAboutMean(Amplitude mean) = 0;
+		/**
 		 * @brief Applies a single-qubit Hadamard gate.
 		 * @param qubit Target qubit index.
 		 */

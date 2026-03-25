@@ -157,6 +157,27 @@ class ZfpStateBackend final : public IStateBackend {
 			}
 		}
 
+		/** @brief Applies inversion-about-mean with a known mean inside one mutate scope. */
+		void applyInversionAboutMeanWithMean(Amplitude mean) {
+			for(size_t chunkIndex = 0; chunkIndex < chunks_.size(); ++chunkIndex) {
+				auto slot = acquireChunk(chunkIndex);
+				for(size_t elem = 0; elem < chunks_[chunkIndex].elemCount; elem += 2u) {
+					const double real = slot.data[elem];
+					const double imag = slot.data[elem + 1u];
+					slot.data[elem] = 2.0 * mean.real - real;
+					slot.data[elem + 1u] = 2.0 * mean.imag - imag;
+				}
+				*slot.dirty = true;
+			}
+		}
+
+		/** @brief Chooses an effective cache size for the current register geometry. */
+		size_t effectiveCacheSlots() const {
+			const size_t chunkCount = chunks_.size();
+			const size_t configuredSlots = cfg_.zfp.gateCacheSlots;
+			return std::min(configuredSlots, chunkCount);
+		}
+
 		/** @brief Configures chunk layout, storage metadata, and cache topology. */
 		void configureStorage(unsigned int numQubits) {
 			numQubits_ = numQubits;
@@ -166,7 +187,7 @@ class ZfpStateBackend final : public IStateBackend {
 			for(size_t chunkIndex = 0; chunkIndex < chunks_.size(); ++chunkIndex) {
 				chunks_[chunkIndex].elemCount = layout_.chunkElemCount(chunkIndex);
 			}
-			cache_.configure(cfg_.zfp.gateCacheSlots, chunks_.size());
+			cache_.configure(effectiveCacheSlots(), chunks_.size());
 			batchDepth_ = 0u;
 		}
 
@@ -448,19 +469,16 @@ class ZfpStateBackend final : public IStateBackend {
 						sumImag += slot.data[elem + 1u];
 					}
 				}
-				const double meanReal = sumReal / static_cast<double>(numStates_);
-				const double meanImag = sumImag / static_cast<double>(numStates_);
-				for(size_t chunkIndex = 0; chunkIndex < chunks_.size(); ++chunkIndex) {
-					auto slot = acquireChunk(chunkIndex);
-					for(size_t elem = 0; elem < chunks_[chunkIndex].elemCount; elem += 2u) {
-						const double real = slot.data[elem];
-						const double imag = slot.data[elem + 1u];
-						slot.data[elem] = 2.0 * meanReal - real;
-						slot.data[elem + 1u] = 2.0 * meanImag - imag;
-					}
-					*slot.dirty = true;
-				}
+				applyInversionAboutMeanWithMean({
+					sumReal / static_cast<double>(numStates_),
+					sumImag / static_cast<double>(numStates_)
+				});
 			});
+		}
+
+		/** @brief Applies inversion-about-mean transform using a precomputed mean. */
+		void inversionAboutMean(Amplitude mean) override {
+			mutate("inversion about mean", [&]() { applyInversionAboutMeanWithMean(mean); });
 		}
 
 		/** @brief Applies Hadamard gate to one qubit. */

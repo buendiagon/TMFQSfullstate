@@ -153,6 +153,11 @@ class QuantumRegister {
 		/** @brief Applies inversion about mean to the full register. */
 		void applyInversionAboutMean();
 		/**
+		 * @brief Applies inversion about mean using a caller-provided mean amplitude.
+		 * @param mean Mean complex amplitude across the full register.
+		 */
+		void applyInversionAboutMean(Amplitude mean);
+		/**
 		 * @brief Applies a single-qubit Hadamard gate.
 		 * @param qubit Target qubit.
 		 */

@@ -17,6 +17,16 @@ enum class StorageStrategyKind {
 	Auto
 };
 
+/** @brief Describes the expected state-access pattern for backend tuning. */
+enum class StorageWorkloadHint {
+	/** @brief No specific workload knowledge is available. */
+	Generic,
+	/** @brief Repeated full-register sweeps such as Grover iterations. */
+	Grover,
+	/** @brief Transform-style full-register sweeps such as QFT. */
+	Qft
+};
+
 /** @brief Compression tuning mode used by the ZFP backend. */
 enum class ZfpCompressionMode {
 	/** @brief Keep a target bits-per-value rate. */
@@ -43,6 +53,14 @@ struct BloscConfig {
 	size_t gateCacheSlots = 8;
 };
 
+/** @brief Per-field override markers used by backend auto-tuning. */
+struct BloscTuningOverrides {
+	bool chunkStates = false;
+	bool clevel = false;
+	bool nthreads = false;
+	bool gateCacheSlots = false;
+};
+
 /** @brief Runtime configuration for the ZFP backend. */
 struct ZfpConfig {
 	/** @brief Active compression control mode. */
@@ -59,16 +77,32 @@ struct ZfpConfig {
 	size_t gateCacheSlots = 8;
 };
 
+/** @brief Per-field override markers used by backend auto-tuning. */
+struct ZfpTuningOverrides {
+	bool mode = false;
+	bool rate = false;
+	bool precision = false;
+	bool accuracy = false;
+	bool chunkStates = false;
+	bool gateCacheSlots = false;
+};
+
 /** @brief Top-level configuration for register construction and backend selection. */
 struct RegisterConfig {
 	/** @brief Preferred storage backend strategy. */
 	StorageStrategyKind strategy = StorageStrategyKind::Dense;
 	/** @brief Dense/auto cutoff in bytes when `strategy == Auto`. */
 	size_t autoThresholdBytes = 8u * 1024u * 1024u;
+	/** @brief Optional workload hint that guides backend tuning heuristics. */
+	StorageWorkloadHint workloadHint = StorageWorkloadHint::Generic;
 	/** @brief Blosc backend settings. */
 	BloscConfig blosc;
+	/** @brief Explicit-user override markers for Blosc knobs. */
+	BloscTuningOverrides bloscOverrides;
 	/** @brief ZFP backend settings. */
 	ZfpConfig zfp;
+	/** @brief Explicit-user override markers for ZFP knobs. */
+	ZfpTuningOverrides zfpOverrides;
 };
 
 } // namespace tmfqs

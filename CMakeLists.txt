@@ -1,5 +1,14 @@
 cmake_minimum_required(VERSION 3.21)
 
+if(NOT DEFINED CMAKE_CXX_COMPILER AND NOT DEFINED ENV{CXX})
+	find_program(TMFQS_DEFAULT_CXX_COMPILER NAMES icpx g++)
+	if(TMFQS_DEFAULT_CXX_COMPILER)
+		get_filename_component(TMFQS_DEFAULT_CXX_COMPILER_NAME "${TMFQS_DEFAULT_CXX_COMPILER}" NAME)
+		set(CMAKE_CXX_COMPILER "${TMFQS_DEFAULT_CXX_COMPILER}" CACHE FILEPATH "Default C++ compiler" FORCE)
+		message(STATUS "No C++ compiler explicitly configured, defaulting to ${TMFQS_DEFAULT_CXX_COMPILER_NAME}")
+	endif()
+endif()
+
 project(TMFQS LANGUAGES CXX)
 
 include(GNUInstallDirs)
@@ -7,6 +16,13 @@ include(CMakePackageConfigHelpers)
 include(CheckIPOSupported)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+	set(default_build_type "RelWithDebInfo")
+	set(CMAKE_BUILD_TYPE "${default_build_type}" CACHE STRING "Build type" FORCE)
+	set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release RelWithDebInfo MinSizeRel)
+	message(STATUS "No CMAKE_BUILD_TYPE specified, defaulting to ${default_build_type}")
+endif()
 
 if(NOT DEFINED BUILD_SHARED_LIBS)
 	set(BUILD_SHARED_LIBS ON CACHE BOOL "Build shared libraries by default")

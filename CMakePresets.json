@@ -9,8 +9,23 @@
     {
       "name": "dev",
       "displayName": "Development",
-      "description": "Debug build with examples, tests, and benchmarks enabled",
+      "description": "Optimized developer build with debug info, examples, tests, and benchmarks enabled",
       "binaryDir": "${sourceDir}/build/dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "TMFQS_BUILD_EXAMPLES": "ON",
+        "TMFQS_BUILD_TESTS": "ON",
+        "TMFQS_BUILD_BENCHMARKS": "ON",
+        "TMFQS_WITH_BLOSC2": "AUTO",
+        "TMFQS_WITH_ZFP": "AUTO",
+        "TMFQS_ENABLE_SANITIZERS": "OFF"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug",
+      "description": "Unoptimized debug build with examples, tests, and benchmarks enabled",
+      "binaryDir": "${sourceDir}/build/debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "TMFQS_BUILD_EXAMPLES": "ON",
@@ -58,6 +73,10 @@
       "configurePreset": "dev"
     },
     {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
       "name": "release",
       "configurePreset": "release"
     },
@@ -70,6 +89,13 @@
     {
       "name": "dev",
       "configurePreset": "dev",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug",
       "output": {
         "outputOnFailure": true
       }

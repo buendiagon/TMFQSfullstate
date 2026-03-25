@@ -221,6 +221,21 @@ class BloscStateBackend final : public IStateBackend {
 			}
 		}
 
+		/** @brief Applies inversion-about-mean with a known mean inside one mutate scope. */
+		void applyInversionAboutMeanWithMean(Amplitude mean) {
+			for(size_t chunkIndex = 0; chunkIndex < layout_.chunkCount(); ++chunkIndex) {
+				auto slot = acquireChunk(chunkIndex);
+				const size_t elemCount = chunkElemCount(chunkIndex);
+				for(size_t elem = 0; elem + 1u < elemCount; elem += 2u) {
+					const double real = slot.data[elem];
+					const double imag = slot.data[elem + 1u];
+					slot.data[elem] = 2.0 * mean.real - real;
+					slot.data[elem + 1u] = 2.0 * mean.imag - imag;
+				}
+				*slot.dirty = true;
+			}
+		}
+
 		/** @brief Configures chunk layout, codec storage, and cache topology. */
 		void configureStorage(unsigned int numQubits) {
 			numQubits_ = numQubits;
@@ -533,20 +548,16 @@ class BloscStateBackend final : public IStateBackend {
 						sumImag += slot.data[elem + 1u];
 					}
 				}
-				const double meanReal = sumReal / static_cast<double>(numStates_);
-				const double meanImag = sumImag / static_cast<double>(numStates_);
-				for(size_t chunkIndex = 0; chunkIndex < layout_.chunkCount(); ++chunkIndex) {
-					auto slot = acquireChunk(chunkIndex);
-					const size_t elemCount = chunkElemCount(chunkIndex);
-					for(size_t elem = 0; elem + 1u < elemCount; elem += 2u) {
-						const double real = slot.data[elem];
-						const double imag = slot.data[elem + 1u];
-						slot.data[elem] = 2.0 * meanReal - real;
-						slot.data[elem + 1u] = 2.0 * meanImag - imag;
-					}
-					*slot.dirty = true;
-				}
+				applyInversionAboutMeanWithMean({
+					sumReal / static_cast<double>(numStates_),
+					sumImag / static_cast<double>(numStates_)
+				});
 			});
+		}
+
+		/** @brief Applies inversion-about-mean transform using a precomputed mean. */
+		void inversionAboutMean(Amplitude mean) override {
+			mutate("inversion about mean", [&]() { applyInversionAboutMeanWithMean(mean); });
 		}
 
 		/** @brief Applies Hadamard gate to one qubit. */

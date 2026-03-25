@@ -1,6 +1,5 @@
 #include "tmfqsfs.h"
 
-#include <cassert>
 #include <iostream>
 #include <stdexcept>
 
@@ -12,15 +11,15 @@ void testDefaultConstructedRegisterIsValid() {
 	using namespace tmfqs;
 	std::cout << "=== default register validity ===\n";
 	QuantumRegister qreg;
-	assert(qreg.qubitCount() == 0u);
-	assert(qreg.stateCount() == 1u);
-	assert(qreg.amplitudeElementCount() == 2u);
+	TMFQS_TEST_REQUIRE(qreg.qubitCount() == 0u);
+	TMFQS_TEST_REQUIRE(qreg.stateCount() == 1u);
+	TMFQS_TEST_REQUIRE(qreg.amplitudeElementCount() == 2u);
 	const Amplitude amp = qreg.amplitude(0);
-	assert(tmfqs_test::approxEqual(amp.real, 1.0, 1e-12));
-	assert(tmfqs_test::approxEqual(amp.imag, 0.0, 1e-12));
-	assert(tmfqs_test::approxEqual(qreg.totalProbability(), 1.0, 1e-12));
+	TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(amp.real, 1.0, 1e-12));
+	TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(amp.imag, 0.0, 1e-12));
+	TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(qreg.totalProbability(), 1.0, 1e-12));
 	Mt19937RandomSource randomSource(1u);
-	assert(qreg.measure(randomSource) == 0u);
+	TMFQS_TEST_REQUIRE(qreg.measure(randomSource) == 0u);
 
 	bool threw = false;
 	try {
@@ -28,7 +27,7 @@ void testDefaultConstructedRegisterIsValid() {
 	} catch(const std::out_of_range &) {
 		threw = true;
 	}
-	assert(threw);
+	TMFQS_TEST_REQUIRE(threw);
 }
 
 void testOutOfRangeQueriesThrow() {
@@ -41,7 +40,7 @@ void testOutOfRangeQueriesThrow() {
 	} catch(const std::out_of_range &) {
 		ampThrew = true;
 	}
-	assert(ampThrew);
+	TMFQS_TEST_REQUIRE(ampThrew);
 
 	bool probThrew = false;
 	try {
@@ -49,7 +48,7 @@ void testOutOfRangeQueriesThrow() {
 	} catch(const std::out_of_range &) {
 		probThrew = true;
 	}
-	assert(probThrew);
+	TMFQS_TEST_REQUIRE(probThrew);
 }
 
 void testPublicGateValidation() {
@@ -63,7 +62,7 @@ void testPublicGateValidation() {
 	} catch(const std::out_of_range &) {
 		hadamardThrew = true;
 	}
-	assert(hadamardThrew);
+	TMFQS_TEST_REQUIRE(hadamardThrew);
 
 	bool pauliXThrew = false;
 	try {
@@ -71,7 +70,7 @@ void testPublicGateValidation() {
 	} catch(const std::out_of_range &) {
 		pauliXThrew = true;
 	}
-	assert(pauliXThrew);
+	TMFQS_TEST_REQUIRE(pauliXThrew);
 
 	bool cnotRangeThrew = false;
 	try {
@@ -79,7 +78,7 @@ void testPublicGateValidation() {
 	} catch(const std::out_of_range &) {
 		cnotRangeThrew = true;
 	}
-	assert(cnotRangeThrew);
+	TMFQS_TEST_REQUIRE(cnotRangeThrew);
 
 	bool cnotDistinctThrew = false;
 	try {
@@ -87,7 +86,7 @@ void testPublicGateValidation() {
 	} catch(const std::invalid_argument &) {
 		cnotDistinctThrew = true;
 	}
-	assert(cnotDistinctThrew);
+	TMFQS_TEST_REQUIRE(cnotDistinctThrew);
 
 	bool swapDistinctThrew = false;
 	try {
@@ -95,7 +94,7 @@ void testPublicGateValidation() {
 	} catch(const std::invalid_argument &) {
 		swapDistinctThrew = true;
 	}
-	assert(swapDistinctThrew);
+	TMFQS_TEST_REQUIRE(swapDistinctThrew);
 }
 
 void testApplyGateValidation() {
@@ -109,7 +108,7 @@ void testApplyGateValidation() {
 	} catch(const std::invalid_argument &) {
 		duplicateThrew = true;
 	}
-	assert(duplicateThrew);
+	TMFQS_TEST_REQUIRE(duplicateThrew);
 
 	bool rangeThrew = false;
 	try {
@@ -117,7 +116,7 @@ void testApplyGateValidation() {
 	} catch(const std::out_of_range &) {
 		rangeThrew = true;
 	}
-	assert(rangeThrew);
+	TMFQS_TEST_REQUIRE(rangeThrew);
 }
 
 void testUniformSuperpositionValidation() {
@@ -131,7 +130,7 @@ void testUniformSuperpositionValidation() {
 	} catch(const std::invalid_argument &) {
 		emptyThrew = true;
 	}
-	assert(emptyThrew);
+	TMFQS_TEST_REQUIRE(emptyThrew);
 
 	bool outOfRangeThrew = false;
 	try {
@@ -139,7 +138,7 @@ void testUniformSuperpositionValidation() {
 	} catch(const std::out_of_range &) {
 		outOfRangeThrew = true;
 	}
-	assert(outOfRangeThrew);
+	TMFQS_TEST_REQUIRE(outOfRangeThrew);
 }
 
 } // namespace

@@ -1,6 +1,5 @@
 #include "tmfqsfs.h"
 
-#include <cassert>
 #include <iostream>
 
 #include "../common/test_helpers.h"

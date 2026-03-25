@@ -14,6 +14,37 @@ namespace tmfqs {
 namespace algorithms {
 namespace {
 
+class ScopedOperationBatch {
+	public:
+		explicit ScopedOperationBatch(QuantumRegister &quantumRegister) : quantumRegister_(quantumRegister) {
+			quantumRegister_.beginOperationBatch();
+		}
+
+		ScopedOperationBatch(const ScopedOperationBatch &) = delete;
+		ScopedOperationBatch &operator=(const ScopedOperationBatch &) = delete;
+
+		~ScopedOperationBatch() {
+			if(!open_) {
+				return;
+			}
+			try {
+				quantumRegister_.endOperationBatch();
+			} catch(...) {}
+		}
+
+		void close() {
+			if(!open_) {
+				return;
+			}
+			quantumRegister_.endOperationBatch();
+			open_ = false;
+		}
+
+	private:
+		QuantumRegister &quantumRegister_;
+		bool open_ = true;
+};
+
 std::vector<StateIndex> resolveMarkedStates(const GroverConfig &config, unsigned int stateCount) {
 	std::vector<StateIndex> resolved;
 	if(config.markedStates.empty()) {
@@ -58,22 +89,34 @@ StateIndex groverSearch(const GroverConfig &config, IRandomSource &randomSource)
 	const unsigned int stateCount = checkedStateCount(config.numQubits);
 	const std::vector<StateIndex> markedStates = resolveMarkedStates(config, stateCount);
 
-	QuantumRegister quantumRegister(config.numQubits, config.registerConfig);
-	CompiledAlgorithmPlan plan;
+	RegisterConfig registerConfig = config.registerConfig;
+	if(registerConfig.workloadHint == StorageWorkloadHint::Generic) {
+		registerConfig.workloadHint = StorageWorkloadHint::Grover;
+	}
+	QuantumRegister quantumRegister(config.numQubits, registerConfig);
+	ScopedOperationBatch batch(quantumRegister);
 	for(unsigned int q = 0; q < config.numQubits; ++q) {
-		plan.addOperation(HadamardOp{q});
+		quantumRegister.applyHadamard(q);
 	}
-
-	std::vector<AlgorithmOperation> iterationOperations;
-	iterationOperations.reserve(markedStates.size() + 1u);
-	for(StateIndex markedState : markedStates) {
-		iterationOperations.push_back(PhaseFlipBasisStateOp{markedState});
-	}
-	iterationOperations.push_back(InversionAboutMeanOp{});
 
 	const unsigned int iterations = computeGroverIterations(stateCount, markedStates.size());
-	plan.addRepeatBlock(iterationOperations, iterations);
-	executePlan(quantumRegister, plan);
+	Amplitude amplitudeSum{std::sqrt(static_cast<double>(stateCount)), 0.0};
+	for(unsigned int iteration = 0; iteration < iterations; ++iteration) {
+		Amplitude markedAmplitudeSum{0.0, 0.0};
+		for(StateIndex markedState : markedStates) {
+			const Amplitude amp = quantumRegister.amplitude(markedState);
+			markedAmplitudeSum.real += amp.real;
+			markedAmplitudeSum.imag += amp.imag;
+			quantumRegister.applyPhaseFlipBasisState(markedState);
+		}
+		amplitudeSum.real -= 2.0 * markedAmplitudeSum.real;
+		amplitudeSum.imag -= 2.0 * markedAmplitudeSum.imag;
+		quantumRegister.applyInversionAboutMean({
+			amplitudeSum.real / static_cast<double>(stateCount),
+			amplitudeSum.imag / static_cast<double>(stateCount)
+		});
+	}
+	batch.close();
 
 	if(config.verbose) {
 		quantumRegister.printStatesVector();

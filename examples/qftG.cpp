@@ -103,24 +103,28 @@ static bool parseArgs(int argc, char *argv[], CliOptions &optionsOut) {
 			unsigned int value = 0;
 			if(i + 1 >= argc || !parseUnsigned(argv[++i], value) || value == 0) return false;
 			optionsOut.registerConfig.blosc.chunkStates = value;
+			optionsOut.registerConfig.bloscOverrides.chunkStates = true;
 			continue;
 		}
 		if(arg == "--cache-slots") {
 			unsigned int value = 0;
 			if(i + 1 >= argc || !parseUnsigned(argv[++i], value) || value == 0) return false;
 			optionsOut.registerConfig.blosc.gateCacheSlots = value;
+			optionsOut.registerConfig.bloscOverrides.gateCacheSlots = true;
 			continue;
 		}
 		if(arg == "--clevel") {
 			unsigned int value = 0;
 			if(i + 1 >= argc || !parseUnsigned(argv[++i], value)) return false;
 			optionsOut.registerConfig.blosc.clevel = static_cast<int>(value);
+			optionsOut.registerConfig.bloscOverrides.clevel = true;
 			continue;
 		}
 		if(arg == "--nthreads") {
 			unsigned int value = 0;
 			if(i + 1 >= argc || !parseUnsigned(argv[++i], value) || value == 0) return false;
 			optionsOut.registerConfig.blosc.nthreads = static_cast<int>(value);
+			optionsOut.registerConfig.bloscOverrides.nthreads = true;
 			continue;
 		}
 		if(arg == "--threshold-mb") {
@@ -132,36 +136,42 @@ static bool parseArgs(int argc, char *argv[], CliOptions &optionsOut) {
 		if(arg == "--zfp-mode") {
 			if(i + 1 >= argc) return false;
 			optionsOut.registerConfig.zfp.mode = parseZfpMode(argv[++i]);
+			optionsOut.registerConfig.zfpOverrides.mode = true;
 			continue;
 		}
 		if(arg == "--zfp-rate") {
 			double value = 0.0;
 			if(i + 1 >= argc || !parseDouble(argv[++i], value) || value <= 0.0) return false;
 			optionsOut.registerConfig.zfp.rate = value;
+			optionsOut.registerConfig.zfpOverrides.rate = true;
 			continue;
 		}
 		if(arg == "--zfp-precision") {
 			unsigned int value = 0;
 			if(i + 1 >= argc || !parseUnsigned(argv[++i], value) || value == 0u) return false;
 			optionsOut.registerConfig.zfp.precision = value;
+			optionsOut.registerConfig.zfpOverrides.precision = true;
 			continue;
 		}
 		if(arg == "--zfp-accuracy") {
 			double value = 0.0;
 			if(i + 1 >= argc || !parseDouble(argv[++i], value) || value <= 0.0) return false;
 			optionsOut.registerConfig.zfp.accuracy = value;
+			optionsOut.registerConfig.zfpOverrides.accuracy = true;
 			continue;
 		}
 		if(arg == "--zfp-chunk-states") {
 			unsigned int value = 0;
 			if(i + 1 >= argc || !parseUnsigned(argv[++i], value) || value == 0u) return false;
 			optionsOut.registerConfig.zfp.chunkStates = value;
+			optionsOut.registerConfig.zfpOverrides.chunkStates = true;
 			continue;
 		}
 		if(arg == "--zfp-cache-slots") {
 			unsigned int value = 0;
 			if(i + 1 >= argc || !parseUnsigned(argv[++i], value) || value == 0u) return false;
 			optionsOut.registerConfig.zfp.gateCacheSlots = value;
+			optionsOut.registerConfig.zfpOverrides.gateCacheSlots = true;
 			continue;
 		}
 		std::cout << "Unknown option: " << arg << "\n";
@@ -193,6 +203,9 @@ int main(int argc, char *argv[]) {
 			return 1;
 		}
 
+		if(options.registerConfig.workloadHint == tmfqs::StorageWorkloadHint::Generic) {
+			options.registerConfig.workloadHint = tmfqs::StorageWorkloadHint::Qft;
+		}
 		tmfqs::QuantumRegister quantumRegister(options.qubitCount, options.registerConfig);
 		quantumRegister.initUniformSuperposition(tmfqs::BasisStateList(std::move(selectedStates)));
 		tmfqs::algorithms::qftInPlace(quantumRegister);

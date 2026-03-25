@@ -1,7 +1,6 @@
 #include "tmfqsfs.h"
 
 #include <algorithm>
-#include <cassert>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -19,13 +18,13 @@ void testComplexExp() {
 	using namespace tmfqs;
 	std::cout << "=== complexExp precision ===\n";
 	const Amplitude result1 = complexExp({0.0, 0.0});
-	assert(tmfqs_test::approxEqual(result1.real, 1.0) && tmfqs_test::approxEqual(result1.imag, 0.0));
+	TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(result1.real, 1.0) && tmfqs_test::approxEqual(result1.imag, 0.0));
 
 	const Amplitude result2 = complexExp({0.0, kPi});
-	assert(tmfqs_test::approxEqual(result2.real, -1.0) && tmfqs_test::approxEqual(result2.imag, 0.0));
+	TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(result2.real, -1.0) && tmfqs_test::approxEqual(result2.imag, 0.0));
 
 	const Amplitude result3 = complexExp({1.0, 0.0});
-	assert(tmfqs_test::approxEqual(result3.real, std::exp(1.0)));
+	TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(result3.real, std::exp(1.0)));
 }
 
 void testGroverMeasure() {
@@ -39,7 +38,7 @@ void testGroverMeasure() {
 			++successes;
 		}
 	}
-	assert(successes > 0);
+	TMFQS_TEST_REQUIRE(successes > 0);
 }
 
 void testGroverSmallSpaceIterations() {
@@ -49,7 +48,7 @@ void testGroverSmallSpaceIterations() {
 	const int trials = 32;
 	for(int t = 0; t < trials; ++t) {
 		Mt19937RandomSource randomSource(static_cast<uint32_t>(200u + t));
-		assert(algorithms::groverSearch(config, randomSource) == config.markedState);
+		TMFQS_TEST_REQUIRE(algorithms::groverSearch(config, randomSource) == config.markedState);
 	}
 }
 
@@ -61,10 +60,10 @@ void testQft() {
 	const double expectedAmp = 1.0 / std::sqrt(8.0);
 	for(unsigned int s = 0; s < 8; ++s) {
 		const Amplitude amp = qreg.amplitude(s);
-		assert(tmfqs_test::approxEqual(amp.real, expectedAmp, 1e-6));
-		assert(tmfqs_test::approxEqual(amp.imag, 0.0, 1e-6));
+		TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(amp.real, expectedAmp, 1e-6));
+		TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(amp.imag, 0.0, 1e-6));
 	}
-	assert(tmfqs_test::approxEqual(qreg.totalProbability(), 1.0, 1e-6));
+	TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(qreg.totalProbability(), 1.0, 1e-6));
 }
 
 void testQftBasisPhases() {
@@ -82,8 +81,8 @@ void testQftBasisPhases() {
 			(2.0 * kPi * static_cast<double>(sourceState) * static_cast<double>(y)) /
 			static_cast<double>(stateCount);
 		const Amplitude amp = qreg.amplitude(y);
-		assert(tmfqs_test::approxEqual(amp.real, amplitudeScale * std::cos(angle), 1e-6));
-		assert(tmfqs_test::approxEqual(amp.imag, amplitudeScale * std::sin(angle), 1e-6));
+		TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(amp.real, amplitudeScale * std::cos(angle), 1e-6));
+		TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(amp.imag, amplitudeScale * std::sin(angle), 1e-6));
 	}
 }
 
@@ -97,11 +96,64 @@ void testGroverPrimitives() {
 	const Amplitude before = qreg.amplitude(3);
 	qreg.applyPhaseFlipBasisState(3);
 	const Amplitude after = qreg.amplitude(3);
-	assert(tmfqs_test::approxEqual(after.real, -before.real, 1e-9));
-	assert(tmfqs_test::approxEqual(after.imag, -before.imag, 1e-9));
+	TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(after.real, -before.real, 1e-9));
+	TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(after.imag, -before.imag, 1e-9));
 
 	qreg.applyInversionAboutMean();
-	assert(tmfqs_test::approxEqual(qreg.totalProbability(), 1.0, 1e-6));
+	TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(qreg.totalProbability(), 1.0, 1e-6));
+}
+
+void testMeanAwareInversionMatchesDefault() {
+	using namespace tmfqs;
+	std::cout << "=== mean-aware inversion about mean ===\n";
+	const AmplitudesVector amplitudes = {
+		0.20, 0.10,
+		-0.15, 0.05,
+		0.30, -0.20,
+		0.00, 0.10,
+		-0.25, -0.15,
+		0.18, 0.12,
+		-0.08, 0.04,
+		0.22, -0.06
+	};
+
+	auto verifyConfig = [&](const RegisterConfig &cfg, double tol) {
+		QuantumRegister baseline(3, amplitudes, cfg);
+		QuantumRegister optimized(3, amplitudes, cfg);
+		Amplitude mean{0.0, 0.0};
+		for(unsigned int state = 0; state < optimized.stateCount(); ++state) {
+			const Amplitude amp = optimized.amplitude(state);
+			mean.real += amp.real;
+			mean.imag += amp.imag;
+		}
+		mean.real /= static_cast<double>(optimized.stateCount());
+		mean.imag /= static_cast<double>(optimized.stateCount());
+		baseline.applyInversionAboutMean();
+		optimized.applyInversionAboutMean(mean);
+		tmfqs_test::assertRegistersClose(baseline, optimized, tol);
+	};
+
+	RegisterConfig denseCfg;
+	denseCfg.strategy = StorageStrategyKind::Dense;
+	verifyConfig(denseCfg, 1e-12);
+
+	if(StorageStrategyRegistry::isAvailable(StorageStrategyKind::Blosc)) {
+		RegisterConfig bloscCfg;
+		bloscCfg.strategy = StorageStrategyKind::Blosc;
+		bloscCfg.blosc.chunkStates = 8;
+		bloscCfg.blosc.gateCacheSlots = 4;
+		verifyConfig(bloscCfg, 1e-12);
+	}
+
+	if(StorageStrategyRegistry::isAvailable(StorageStrategyKind::Zfp)) {
+		RegisterConfig zfpCfg;
+		zfpCfg.strategy = StorageStrategyKind::Zfp;
+		zfpCfg.zfp.mode = ZfpCompressionMode::FixedRate;
+		zfpCfg.zfp.rate = 64.0;
+		zfpCfg.zfp.chunkStates = 8;
+		zfpCfg.zfp.gateCacheSlots = 4;
+		verifyConfig(zfpCfg, 1e-9);
+	}
 }
 
 void testGroverInvalidInputThrows() {
@@ -114,7 +166,7 @@ void testGroverInvalidInputThrows() {
 	} catch(const std::invalid_argument &) {
 		threw = true;
 	}
-	assert(threw);
+	TMFQS_TEST_REQUIRE(threw);
 }
 
 void testGroverMultiMarkedFullSpace() {
@@ -124,7 +176,7 @@ void testGroverMultiMarkedFullSpace() {
 	const algorithms::GroverConfig config{BasisStateList{1u, 6u}, 3u, false};
 	for(int t = 0; t < 32; ++t) {
 		Mt19937RandomSource randomSource(static_cast<uint32_t>(300u + t));
-		assert(containsState(markedStates, algorithms::groverSearch(config, randomSource)));
+		TMFQS_TEST_REQUIRE(containsState(markedStates, algorithms::groverSearch(config, randomSource)));
 	}
 }
 
@@ -135,7 +187,7 @@ void testGroverSubsetSupport() {
 	const algorithms::GroverConfig config{BasisStateList{2u, 5u, 2u}, 3u, false};
 	for(int t = 0; t < 16; ++t) {
 		Mt19937RandomSource randomSource(static_cast<uint32_t>(400u + t));
-		assert(containsState(markedStates, algorithms::groverSearch(config, randomSource)));
+		TMFQS_TEST_REQUIRE(containsState(markedStates, algorithms::groverSearch(config, randomSource)));
 	}
 }
 
@@ -145,7 +197,7 @@ void testGroverZeroIterationCase() {
 	const algorithms::GroverConfig config{BasisStateList{0u, 1u, 2u, 3u}, 2u, false};
 	Mt19937RandomSource randomSource(500u);
 	const StateIndex measured = algorithms::groverSearch(config, randomSource);
-	assert(measured < checkedStateCount(config.numQubits));
+	TMFQS_TEST_REQUIRE(measured < checkedStateCount(config.numQubits));
 }
 
 void testGroverBackendSelection() {
@@ -158,7 +210,7 @@ void testGroverBackendSelection() {
 	{
 		const algorithms::GroverConfig denseConfig{BasisStateList{1u, 6u}, 3u, false, denseCfg};
 		Mt19937RandomSource randomSource(600u);
-		assert(containsState(markedStates, algorithms::groverSearch(denseConfig, randomSource)));
+		TMFQS_TEST_REQUIRE(containsState(markedStates, algorithms::groverSearch(denseConfig, randomSource)));
 	}
 
 	if(StorageStrategyRegistry::isAvailable(StorageStrategyKind::Blosc)) {
@@ -168,7 +220,7 @@ void testGroverBackendSelection() {
 		bloscCfg.blosc.gateCacheSlots = 4;
 		const algorithms::GroverConfig bloscConfig{BasisStateList{1u, 6u}, 3u, false, bloscCfg};
 		Mt19937RandomSource randomSource(601u);
-		assert(containsState(markedStates, algorithms::groverSearch(bloscConfig, randomSource)));
+		TMFQS_TEST_REQUIRE(containsState(markedStates, algorithms::groverSearch(bloscConfig, randomSource)));
 	}
 
 	if(StorageStrategyRegistry::isAvailable(StorageStrategyKind::Zfp)) {
@@ -180,7 +232,7 @@ void testGroverBackendSelection() {
 		zfpCfg.zfp.gateCacheSlots = 4;
 		const algorithms::GroverConfig zfpConfig{BasisStateList{1u, 6u}, 3u, false, zfpCfg};
 		Mt19937RandomSource randomSource(602u);
-		assert(containsState(markedStates, algorithms::groverSearch(zfpConfig, randomSource)));
+		TMFQS_TEST_REQUIRE(containsState(markedStates, algorithms::groverSearch(zfpConfig, randomSource)));
 	}
 }
 
@@ -194,7 +246,7 @@ void testGroverInvalidMultiMarkedInput() {
 	} catch(const std::invalid_argument &) {
 		threw = true;
 	}
-	assert(threw);
+	TMFQS_TEST_REQUIRE(threw);
 }
 
 void testOperationExecutor() {
@@ -210,8 +262,8 @@ void testOperationExecutor() {
 	executeOperations(qreg, ops);
 	const Amplitude a00 = qreg.amplitude(0);
 	const Amplitude a10 = qreg.amplitude(2);
-	assert(tmfqs_test::approxEqual(a00.real, 1.0 / std::sqrt(2.0), 1e-6));
-	assert(tmfqs_test::approxEqual(a10.real, 1.0 / std::sqrt(2.0), 1e-6));
+	TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(a00.real, 1.0 / std::sqrt(2.0), 1e-6));
+	TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(a10.real, 1.0 / std::sqrt(2.0), 1e-6));
 }
 
 void testCompiledPlanRepeat() {
@@ -225,8 +277,8 @@ void testCompiledPlanRepeat() {
 	executePlan(qreg, plan);
 	const Amplitude a00 = qreg.amplitude(0);
 	const Amplitude a10 = qreg.amplitude(2);
-	assert(tmfqs_test::approxEqual(a00.real, 1.0 / std::sqrt(2.0), 1e-6));
-	assert(tmfqs_test::approxEqual(a10.real, 1.0 / std::sqrt(2.0), 1e-6));
+	TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(a00.real, 1.0 / std::sqrt(2.0), 1e-6));
+	TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(a10.real, 1.0 / std::sqrt(2.0), 1e-6));
 }
 
 void testDeterministicGroverSeed() {
@@ -235,7 +287,7 @@ void testDeterministicGroverSeed() {
 	const algorithms::GroverConfig config{5u, 3u, false};
 	Mt19937RandomSource rng1(12345u);
 	Mt19937RandomSource rng2(12345u);
-	assert(algorithms::groverSearch(config, rng1) == algorithms::groverSearch(config, rng2));
+	TMFQS_TEST_REQUIRE(algorithms::groverSearch(config, rng1) == algorithms::groverSearch(config, rng2));
 }
 
 void testScalarMultiplication() {
@@ -244,9 +296,9 @@ void testScalarMultiplication() {
 	QuantumGate hadamard = QuantumGate::Hadamard();
 	QuantumGate scaled = hadamard * Amplitude{2.0, 0.0};
 	const double expected = 2.0 / std::sqrt(2.0);
-	assert(!tmfqs_test::approxEqual(scaled[0][0].real, 0.0));
-	assert(tmfqs_test::approxEqual(scaled[0][0].real, expected));
-	assert(tmfqs_test::approxEqual(scaled[1][1].real, -expected));
+	TMFQS_TEST_REQUIRE(!tmfqs_test::approxEqual(scaled[0][0].real, 0.0));
+	TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(scaled[0][0].real, expected));
+	TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(scaled[1][1].real, -expected));
 }
 
 } // namespace
@@ -259,6 +311,7 @@ int main() {
 	testQft();
 	testQftBasisPhases();
 	testGroverPrimitives();
+	testMeanAwareInversionMatchesDefault();
 	testGroverInvalidInputThrows();
 	testGroverMultiMarkedFullSpace();
 	testGroverSubsetSupport();

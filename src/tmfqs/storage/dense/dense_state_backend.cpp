@@ -14,8 +14,6 @@
 #include "tmfqs/storage/common/pair_kernel_executor.h"
 
 namespace tmfqs {
-namespace {
-
 /**
  * @brief Dense backend that stores the full state vector uncompressed in memory.
  */
@@ -51,13 +49,21 @@ class DenseStateBackend final : public IStateBackend {
 			storage::validateBackendTwoQubits(scopeName, q0, q1, numQubits_);
 		}
 
+		template <typename PairFn>
+		/** @brief Iterates state pairs directly over the contiguous dense buffer. */
+		void runPairKernel(unsigned int targetMask, PairFn pairFn) {
+			storage::PairKernelExecutor::runFallback(numStates_, targetMask, [&](StateIndex state0, StateIndex state1) {
+				pairFn(
+					state0,
+					state1,
+					amplitudes_.data() + static_cast<size_t>(state0) * 2u,
+					amplitudes_.data() + static_cast<size_t>(state1) * 2u);
+			});
+		}
+
 	public:
 		/** @brief Constructs backend and optionally initializes to `|0...0>`. */
-		explicit DenseStateBackend(unsigned int numQubits = 0) {
-			if(numQubits > 0) {
-				initBasis(numQubits, 0, {1.0, 0.0});
-			}
-		}
+		explicit DenseStateBackend(const RegisterConfig & = {}) {}
 
 		DenseStateBackend(const DenseStateBackend &) = default;
 		DenseStateBackend &operator=(const DenseStateBackend &) = default;
@@ -143,10 +149,10 @@ class DenseStateBackend final : public IStateBackend {
 		double totalProbability() const override {
 			ensureInitialized("total probability query");
 			double sum = 0.0;
-			for(unsigned int i = 0; i < numStates_; ++i) {
-				const double real = amplitudes_[i * 2];
-				const double imag = amplitudes_[i * 2 + 1];
-				sum += real * real + imag * imag;
+			const double *amp = amplitudes_.data();
+			const double *end = amp + amplitudes_.size();
+			for(; amp != end; amp += 2) {
+				sum += amp[0] * amp[0] + amp[1] * amp[1];
 			}
 			return sum;
 		}
@@ -158,10 +164,9 @@ class DenseStateBackend final : public IStateBackend {
 				throw std::invalid_argument("DenseStateBackend::sampleMeasurement requires rnd in [0,1)");
 			}
 			double cumulative = 0.0;
-			for(StateIndex state = 0; state < numStates_; ++state) {
-				const double real = amplitudes_[state * 2];
-				const double imag = amplitudes_[state * 2 + 1];
-				cumulative += real * real + imag * imag;
+			const double *amp = amplitudes_.data();
+			for(StateIndex state = 0; state < numStates_; ++state, amp += 2) {
+				cumulative += amp[0] * amp[0] + amp[1] * amp[1];
 				if(rnd <= cumulative) {
 					return state;
 				}
@@ -197,17 +202,28 @@ class DenseStateBackend final : public IStateBackend {
 			ensureInitialized("inversion about mean");
 			double sumReal = 0.0;
 			double sumImag = 0.0;
-			for(unsigned int state = 0; state < numStates_; ++state) {
-				sumReal += amplitudes_[2 * state];
-				sumImag += amplitudes_[2 * state + 1];
+			double *amp = amplitudes_.data();
+			double *end = amp + amplitudes_.size();
+			for(; amp != end; amp += 2) {
+				sumReal += amp[0];
+				sumImag += amp[1];
 			}
-			const double meanReal = sumReal / static_cast<double>(numStates_);
-			const double meanImag = sumImag / static_cast<double>(numStates_);
-			for(unsigned int state = 0; state < numStates_; ++state) {
-				const double real = amplitudes_[2 * state];
-				const double imag = amplitudes_[2 * state + 1];
-				amplitudes_[2 * state] = 2.0 * meanReal - real;
-				amplitudes_[2 * state + 1] = 2.0 * meanImag - imag;
+			inversionAboutMean({
+				sumReal / static_cast<double>(numStates_),
+				sumImag / static_cast<double>(numStates_)
+			});
+		}
+
+		/** @brief Applies inversion-about-mean using a precomputed mean amplitude. */
+		void inversionAboutMean(Amplitude mean) override {
+			ensureInitialized("inversion about mean");
+			double *amp = amplitudes_.data();
+			double *end = amp + amplitudes_.size();
+			for(; amp != end; amp += 2) {
+				const double real = amp[0];
+				const double imag = amp[1];
+				amp[0] = 2.0 * mean.real - real;
+				amp[1] = 2.0 * mean.imag - imag;
 			}
 		}
 
@@ -217,18 +233,18 @@ class DenseStateBackend final : public IStateBackend {
 			const unsigned int targetMask = storage::qubitMaskFromMsbIndex(qubit, numQubits_);
 			const double invSqrt2 = 1.0 / std::sqrt(2.0);
 
-			// Iterate state pairs that differ only at target bit.
-			storage::PairKernelExecutor::runFallback(numStates_, targetMask, [&](unsigned int state0, unsigned int state1) {
-				const size_t i0 = static_cast<size_t>(state0) * 2u;
-				const size_t i1 = static_cast<size_t>(state1) * 2u;
-				const double aReal = amplitudes_[i0];
-				const double aImag = amplitudes_[i0 + 1u];
-				const double bReal = amplitudes_[i1];
-				const double bImag = amplitudes_[i1 + 1u];
-				amplitudes_[i0] = (aReal + bReal) * invSqrt2;
-				amplitudes_[i0 + 1u] = (aImag + bImag) * invSqrt2;
-				amplitudes_[i1] = (aReal - bReal) * invSqrt2;
-				amplitudes_[i1 + 1u] = (aImag - bImag) * invSqrt2;
+			runPairKernel(targetMask, [&](unsigned int, unsigned int, double *a0, double *a1) {
+				const double aReal = a0[0];
+				const double aImag = a0[1];
+				const double bReal = a1[0];
+				const double bImag = a1[1];
+				if(aReal == 0.0 && aImag == 0.0 && bReal == 0.0 && bImag == 0.0) {
+					return;
+				}
+				a0[0] = (aReal + bReal) * invSqrt2;
+				a0[1] = (aImag + bImag) * invSqrt2;
+				a1[0] = (aReal - bReal) * invSqrt2;
+				a1[1] = (aImag - bImag) * invSqrt2;
 			});
 		}
 
@@ -236,11 +252,12 @@ class DenseStateBackend final : public IStateBackend {
 		void applyPauliX(QubitIndex qubit) override {
 			validateSingleQubitOperation(qubit, "DenseStateBackend::applyPauliX");
 			const unsigned int targetMask = storage::qubitMaskFromMsbIndex(qubit, numQubits_);
-			storage::PairKernelExecutor::runFallback(numStates_, targetMask, [&](unsigned int state0, unsigned int state1) {
-				const size_t i0 = static_cast<size_t>(state0) * 2u;
-				const size_t i1 = static_cast<size_t>(state1) * 2u;
-				std::swap(amplitudes_[i0], amplitudes_[i1]);
-				std::swap(amplitudes_[i0 + 1u], amplitudes_[i1 + 1u]);
+			runPairKernel(targetMask, [&](unsigned int, unsigned int, double *a0, double *a1) {
+				if(a0[0] == a1[0] && a0[1] == a1[1]) {
+					return;
+				}
+				std::swap(a0[0], a1[0]);
+				std::swap(a0[1], a1[1]);
 			});
 		}
 
@@ -251,13 +268,13 @@ class DenseStateBackend final : public IStateBackend {
 			const unsigned int targetMask = storage::qubitMaskFromMsbIndex(targetQubit, numQubits_);
 			const double phaseReal = std::cos(theta);
 			const double phaseImag = std::sin(theta);
-			storage::PairKernelExecutor::runFallback(numStates_, targetMask, [&](unsigned int, unsigned int state1) {
+			runPairKernel(targetMask, [&](unsigned int, unsigned int state1, double *, double *a1) {
 				if((state1 & controlMask) == 0u) return;
-				const size_t idx = static_cast<size_t>(state1) * 2u;
-				const double real = amplitudes_[idx];
-				const double imag = amplitudes_[idx + 1u];
-				amplitudes_[idx] = phaseReal * real - phaseImag * imag;
-				amplitudes_[idx + 1u] = phaseReal * imag + phaseImag * real;
+				const double real = a1[0];
+				const double imag = a1[1];
+				if(real == 0.0 && imag == 0.0) return;
+				a1[0] = phaseReal * real - phaseImag * imag;
+				a1[1] = phaseReal * imag + phaseImag * real;
 			});
 		}
 
@@ -266,12 +283,13 @@ class DenseStateBackend final : public IStateBackend {
 			validateTwoQubitOperation(controlQubit, targetQubit, "DenseStateBackend::applyControlledNot");
 			const unsigned int controlMask = storage::qubitMaskFromMsbIndex(controlQubit, numQubits_);
 			const unsigned int targetMask = storage::qubitMaskFromMsbIndex(targetQubit, numQubits_);
-			storage::PairKernelExecutor::runFallback(numStates_, targetMask, [&](unsigned int state0, unsigned int state1) {
+			runPairKernel(targetMask, [&](unsigned int state0, unsigned int, double *a0, double *a1) {
 				if((state0 & controlMask) == 0u) return;
-				const size_t i0 = static_cast<size_t>(state0) * 2u;
-				const size_t i1 = static_cast<size_t>(state1) * 2u;
-				std::swap(amplitudes_[i0], amplitudes_[i1]);
-				std::swap(amplitudes_[i0 + 1u], amplitudes_[i1 + 1u]);
+				if(a0[0] == a1[0] && a0[1] == a1[1]) {
+					return;
+				}
+				std::swap(a0[0], a1[0]);
+				std::swap(a0[1], a1[1]);
 			});
 		}
 
@@ -297,13 +315,11 @@ class DenseStateBackend final : public IStateBackend {
 		}
 };
 
-} // namespace
-
 /**
  * @brief Factory helper that builds a dense backend instance.
  */
-std::unique_ptr<IStateBackend> createDenseStateBackend(const RegisterConfig &) {
-	return std::make_unique<DenseStateBackend>();
+std::unique_ptr<IStateBackend> createDenseStateBackend(const RegisterConfig &cfg) {
+	return std::make_unique<DenseStateBackend>(cfg);
 }
 
 } // namespace tmfqs
