@@ -1,0 +1,2 @@
+Resolved strategy: blosc
+Grover search result: 7340032

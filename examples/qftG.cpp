@@ -1,8 +1,10 @@
 #include "tmfqsfs.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -10,8 +12,16 @@
 
 using StateList = std::vector<unsigned int>;
 
+enum class InputFamily {
+	Pattern,
+	RandomPhase
+};
+
+constexpr unsigned int kRandomPhaseSeed = 123456u;
+
 struct CliOptions {
 	unsigned int qubitCount = 0;
+	InputFamily inputFamily = InputFamily::Pattern;
 	tmfqs::RegisterConfig registerConfig;
 };
 
@@ -57,6 +67,19 @@ static StateList chooseInputStates(unsigned int totalStates) {
 	return states;
 }
 
+static tmfqs::AmplitudesVector buildRandomPhaseInput(unsigned int totalStates) {
+	std::mt19937 randomGenerator(kRandomPhaseSeed);
+	std::uniform_real_distribution<double> phaseDistribution(0.0, 2.0 * std::acos(-1.0));
+	const double norm = 1.0 / std::sqrt(static_cast<double>(totalStates));
+	tmfqs::AmplitudesVector amplitudes(static_cast<size_t>(totalStates) * 2u, 0.0);
+	for(unsigned int state = 0; state < totalStates; ++state) {
+		const double phase = phaseDistribution(randomGenerator);
+		amplitudes[static_cast<size_t>(state) * 2u] = norm * std::cos(phase);
+		amplitudes[static_cast<size_t>(state) * 2u + 1u] = norm * std::sin(phase);
+	}
+	return amplitudes;
+}
+
 static tmfqs::StorageStrategyKind parseStrategy(const std::string &value) {
 	if(value == "dense") return tmfqs::StorageStrategyKind::Dense;
 	if(value == "blosc") return tmfqs::StorageStrategyKind::Blosc;
@@ -72,9 +95,20 @@ static tmfqs::ZfpCompressionMode parseZfpMode(const std::string &value) {
 	throw std::invalid_argument("Unknown zfp mode: " + value);
 }
 
+static InputFamily parseInputFamily(const std::string &value) {
+	if(value == "pattern") return InputFamily::Pattern;
+	if(value == "random-phase") return InputFamily::RandomPhase;
+	throw std::invalid_argument("Unknown input family: " + value);
+}
+
 static void printUsage() {
 	std::cout
-		<< "Usage: ./qftG <num_qubits> [--strategy dense|blosc|zfp|auto] [--chunk-states N] [--cache-slots N] [--clevel N] [--nthreads N] [--threshold-mb N] [--zfp-mode rate|precision|accuracy] [--zfp-rate R] [--zfp-precision B] [--zfp-accuracy A] [--zfp-chunk-states N] [--zfp-cache-slots N]\n";
+		<< "Usage: ./qftG <num_qubits> [--input-family pattern|random-phase] "
+		<< "[--strategy dense|blosc|zfp|auto] [--chunk-states N] [--cache-slots N] "
+		<< "[--clevel N] [--nthreads N] [--threshold-mb N] "
+		<< "[--zfp-mode rate|precision|accuracy] [--zfp-rate R] "
+		<< "[--zfp-precision B] [--zfp-accuracy A] [--zfp-chunk-states N] "
+		<< "[--zfp-cache-slots N]\n";
 }
 
 static bool parseArgs(int argc, char *argv[], CliOptions &optionsOut) {
@@ -94,6 +128,11 @@ static bool parseArgs(int argc, char *argv[], CliOptions &optionsOut) {
 
 	for(int i = 2; i < argc; ++i) {
 		const std::string arg = argv[i];
+		if(arg == "--input-family") {
+			if(i + 1 >= argc) return false;
+			optionsOut.inputFamily = parseInputFamily(argv[++i]);
+			continue;
+		}
 		if(arg == "--strategy") {
 			if(i + 1 >= argc) return false;
 			optionsOut.registerConfig.strategy = parseStrategy(argv[++i]);
@@ -200,20 +239,33 @@ int main(int argc, char *argv[]) {
 		}
 
 		const unsigned int totalStates = tmfqs::checkedStateCount(options.qubitCount);
-		StateList selectedStates;
-		if(!buildInputStates(totalStates, selectedStates)) {
-			return 1;
-		}
-
 		if(options.registerConfig.workloadHint == tmfqs::StorageWorkloadHint::Generic) {
 			options.registerConfig.workloadHint = tmfqs::StorageWorkloadHint::Qft;
 		}
-		tmfqs::QuantumRegister quantumRegister(options.qubitCount, options.registerConfig);
-		quantumRegister.initUniformSuperposition(tmfqs::BasisStateList(std::move(selectedStates)));
+		tmfqs::QuantumRegister quantumRegister;
+		if(options.inputFamily == InputFamily::RandomPhase) {
+			quantumRegister = tmfqs::QuantumRegister(
+				options.qubitCount,
+				buildRandomPhaseInput(totalStates),
+				options.registerConfig);
+		} else {
+			StateList selectedStates;
+			if(!buildInputStates(totalStates, selectedStates)) {
+				return 1;
+			}
+			quantumRegister = tmfqs::QuantumRegister(options.qubitCount, options.registerConfig);
+			quantumRegister.initUniformSuperposition(tmfqs::BasisStateList(std::move(selectedStates)));
+		}
 		tmfqs::algorithms::qftInPlace(quantumRegister);
 
 		tmfqs::Mt19937RandomSource randomSource;
 		const unsigned int measuredState = quantumRegister.measure(randomSource);
+		std::cout << "Input family: "
+		          << (options.inputFamily == InputFamily::RandomPhase ? "random-phase" : "pattern")
+		          << "\n";
+		if(options.inputFamily == InputFamily::RandomPhase) {
+			std::cout << "Random seed: " << kRandomPhaseSeed << "\n";
+		}
 		std::cout << "Measured state (k): " << measuredState << "\n";
 		std::cout << "Calculated r (N/k): ";
 		if(measuredState == 0) {

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+pid_file="$1"
+shift
+
+printf '%s\n' "$$" > "${pid_file}"
+kill -STOP "$$"
+exec "$@"

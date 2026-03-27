@@ -1,0 +1,1 @@
+/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/grover 23 1048576\,4194304\,7340032 --strategy dense 

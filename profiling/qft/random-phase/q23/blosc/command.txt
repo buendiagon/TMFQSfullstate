@@ -1,0 +1,1 @@
+/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/qftG 23 --input-family random-phase --strategy blosc 

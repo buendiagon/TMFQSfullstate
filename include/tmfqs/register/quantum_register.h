@@ -202,6 +202,12 @@ class QuantumRegister {
 		StorageStrategyKind resolvedStrategy_ = StorageStrategyKind::Dense;
 		/** @brief Active state backend implementation. */
 		std::unique_ptr<IStateBackend> backend_;
+		/** @brief Global affine scale used to lazily represent full-register transforms. */
+		Amplitude affineScale_{1.0, 0.0};
+		/** @brief Global affine bias used to lazily represent full-register transforms. */
+		Amplitude affineBias_{0.0, 0.0};
+		/** @brief Indicates whether the lazy affine overlay is active. */
+		bool affineOverlayActive_ = false;
 
 		/**
 		 * @brief Creates backend instance and updates cached size metadata.
@@ -213,6 +219,18 @@ class QuantumRegister {
 		 * @param operation Name of the operation requesting initialized state.
 		 */
 		void requireInitialized(const char *operation) const;
+		/** @brief Resets lazy affine overlay state to identity. */
+		void resetAffineOverlay();
+		/** @brief Materializes the logical overlay back into backend storage. */
+		void flushAffineOverlay();
+		/** @brief Applies the lazy affine overlay to one backend amplitude. */
+		Amplitude applyAffineOverlay(Amplitude backendAmplitude) const;
+		/** @brief Converts one logical amplitude through the inverse affine overlay. */
+		Amplitude removeAffineOverlay(Amplitude logicalAmplitude) const;
+		/** @brief Computes the sum of all logical amplitudes. */
+		Amplitude logicalAmplitudeSum() const;
+		/** @brief Exports the current logical state, including any active overlay. */
+		AmplitudesVector snapshotLogicalAmplitudes() const;
 };
 
 } // namespace tmfqs

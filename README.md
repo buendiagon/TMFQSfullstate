@@ -92,7 +92,8 @@ Notes:
 Usage:
 
 ```bash
-./build/dev/bin/qftG <num_qubits> [--strategy dense|blosc|zfp|auto] \
+./build/dev/bin/qftG <num_qubits> [--input-family pattern|random-phase] \
+  [--strategy dense|blosc|zfp|auto] \
   [--chunk-states N] [--cache-slots N] [--clevel N] [--nthreads N] \
   [--threshold-mb N] [--zfp-mode rate|precision|accuracy] [--zfp-rate R] \
   [--zfp-precision B] [--zfp-accuracy A] [--zfp-chunk-states N] \
@@ -102,6 +103,7 @@ Usage:
 
 | Option                 | Meaning                                                             |
 | ---------------------- | ------------------------------------------------------------------- |
+| `--input-family ...`   | `pattern` for `S={8x+(x mod 2)}` or `random-phase` for dense random phases with fixed seed. |
 | `--strategy dense`     | blosc                                                               |
 | `--chunk-states N`     | Blosc: basis states per compressed chunk.                           |
 | `--cache-slots N`      | Blosc: decompressed chunk cache slots used during gate application. |
@@ -120,6 +122,7 @@ Examples:
 
 ```bash
 ./build/dev/bin/qftG 22 --strategy dense
+./build/dev/bin/qftG 22 --input-family random-phase --strategy dense
 ./build/dev/bin/qftG 22 --strategy blosc --chunk-states 16384 --clevel 1 --nthreads 2
 ./build/dev/bin/qftG 22 --strategy zfp --zfp-mode rate --zfp-rate 24 --zfp-chunk-states 32768
 ./build/dev/bin/qftG 22 --strategy auto --threshold-mb 8

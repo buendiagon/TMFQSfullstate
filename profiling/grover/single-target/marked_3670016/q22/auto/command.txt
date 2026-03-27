@@ -1,0 +1,1 @@
+/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/grover 22 3670016 --strategy auto 
