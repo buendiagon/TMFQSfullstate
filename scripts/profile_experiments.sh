@@ -137,8 +137,9 @@ run_profile() {
 
   (
     cd "${ROOT_DIR}"
-    exec bash -lc 'source ./environment >/dev/null 2>&1 && exec ./scripts/exec_after_stop.sh "$@"' \
-      bash "${pid_file}" "${cmd[@]}"
+    exec ./scripts/exec_after_stop.sh "${pid_file}" \
+      bash -lc 'source ./environment >/dev/null 2>&1 && exec "$@"' \
+      bash "${cmd[@]}"
   ) >"${stdout_file}" 2>"${stderr_file}" &
   local launcher_pid=$!
   local target_pid=""

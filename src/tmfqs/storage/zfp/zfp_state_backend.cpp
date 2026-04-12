@@ -332,6 +332,45 @@ class ZfpStateBackend final : public IStateBackend {
 			}
 		}
 
+		/** @brief Exports the full logical state by decompressing each chunk once. */
+		void exportAmplitudes(AmplitudesVector &out) const override {
+			ensureInitialized("amplitude export");
+			out.assign(checkedAmplitudeElementCount(numQubits_), 0.0);
+			std::vector<double> scratch;
+			size_t baseElem = 0u;
+			for(size_t chunkIndex = 0; chunkIndex < chunks_.size(); ++chunkIndex) {
+				const std::vector<double> *cached = cache_.findBuffer(chunkIndex);
+				const double *data = nullptr;
+				const size_t elemCount = chunks_[chunkIndex].elemCount;
+				if(cached) {
+					data = cached->data();
+				} else {
+					codec_.decompress(chunks_[chunkIndex].compressed, elemCount, scratch);
+					data = scratch.data();
+				}
+				std::copy(data, data + elemCount, out.begin() + static_cast<std::ptrdiff_t>(baseElem));
+				baseElem += elemCount;
+			}
+		}
+
+		/** @brief Visits logical storage chunk by chunk without materializing the full state. */
+		void forEachAmplitudeChunk(const AmplitudeChunkVisitor &visitor) const override {
+			ensureInitialized("amplitude chunk iteration");
+			std::vector<double> scratch;
+			for(size_t chunkIndex = 0; chunkIndex < chunks_.size(); ++chunkIndex) {
+				const std::vector<double> *cached = cache_.findBuffer(chunkIndex);
+				const double *data = nullptr;
+				const size_t elemCount = chunks_[chunkIndex].elemCount;
+				if(cached) {
+					data = cached->data();
+				} else {
+					codec_.decompress(chunks_[chunkIndex].compressed, elemCount, scratch);
+					data = scratch.data();
+				}
+				visitor(static_cast<StateIndex>(layout_.chunkStateBegin(chunkIndex)), data, elemCount);
+			}
+		}
+
 		/** @brief Reads one basis-state amplitude. */
 		Amplitude amplitude(StateIndex state) const override {
 			ensureInitialized("amplitude query");

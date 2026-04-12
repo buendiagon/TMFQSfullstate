@@ -5,6 +5,7 @@ set(TMFQS_EXAMPLES
 	qft
 	qftG
 	grover
+	zfp_error_analysis
 	getSumOfProbabilities)
 
 foreach(example_name IN LISTS TMFQS_EXAMPLES)

@@ -1,0 +1,2 @@
+Resolved strategy: zfp
+Grover search result: 3670016

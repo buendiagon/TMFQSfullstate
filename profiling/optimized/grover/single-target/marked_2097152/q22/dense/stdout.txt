@@ -1,0 +1,2 @@
+Resolved strategy: dense
+Grover search result: 2097152

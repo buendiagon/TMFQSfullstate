@@ -185,21 +185,43 @@ Amplitude QuantumRegister::removeAffineOverlay(Amplitude logicalAmplitude) const
 /** @brief Computes the sum of all logical amplitudes. */
 Amplitude QuantumRegister::logicalAmplitudeSum() const {
 	Amplitude sum{0.0, 0.0};
-	for(StateIndex state = 0; state < numStates_; ++state) {
-		sum = addAmplitude(sum, amplitude(state));
-	}
+	visitLogicalAmplitudeChunks([&](StateIndex, const double *data, size_t elemCount) {
+		for(size_t elem = 0; elem + 1u < elemCount; elem += 2u) {
+			sum.real += data[elem];
+			sum.imag += data[elem + 1u];
+		}
+	});
 	return sum;
+}
+
+/** @brief Visits logical amplitudes chunk by chunk, applying overlay lazily when needed. */
+void QuantumRegister::visitLogicalAmplitudeChunks(
+	const std::function<void(StateIndex baseState, const double *data, size_t elemCount)> &visitor) const {
+	requireInitialized("amplitude chunk iteration");
+	if(!affineOverlayActive_) {
+		backend_->forEachAmplitudeChunk(visitor);
+		return;
+	}
+
+	std::vector<double> logicalChunk;
+	backend_->forEachAmplitudeChunk([&](StateIndex baseState, const double *data, size_t elemCount) {
+		logicalChunk.resize(elemCount);
+		for(size_t elem = 0; elem + 1u < elemCount; elem += 2u) {
+			const Amplitude logical = applyAffineOverlay({data[elem], data[elem + 1u]});
+			logicalChunk[elem] = logical.real;
+			logicalChunk[elem + 1u] = logical.imag;
+		}
+		visitor(baseState, logicalChunk.data(), elemCount);
+	});
 }
 
 /** @brief Exports the current logical state, including any active overlay. */
 AmplitudesVector QuantumRegister::snapshotLogicalAmplitudes() const {
 	AmplitudesVector snapshot(amplitudeElementCount(), 0.0);
-	for(StateIndex state = 0; state < numStates_; ++state) {
-		const Amplitude logical = amplitude(state);
-		const size_t elem = static_cast<size_t>(state) * 2u;
-		snapshot[elem] = logical.real;
-		snapshot[elem + 1u] = logical.imag;
-	}
+	visitLogicalAmplitudeChunks([&](StateIndex baseState, const double *data, size_t elemCount) {
+		const size_t beginElem = static_cast<size_t>(baseState) * 2u;
+		std::copy(data, data + elemCount, snapshot.begin() + static_cast<std::ptrdiff_t>(beginElem));
+	});
 	return snapshot;
 }
 
@@ -234,6 +256,12 @@ Amplitude QuantumRegister::amplitude(StateIndex state) const {
 	return applyAffineOverlay(backend_->amplitude(state));
 }
 
+/** @brief Exports the full logical amplitude vector. */
+AmplitudesVector QuantumRegister::amplitudes() const {
+	requireInitialized("amplitude export");
+	return snapshotLogicalAmplitudes();
+}
+
 /** @brief Computes probability mass for one basis state. */
 double QuantumRegister::probability(StateIndex state) const {
 	requireInitialized("probability query");
@@ -248,9 +276,11 @@ double QuantumRegister::totalProbability() const {
 		return backend_->totalProbability();
 	}
 	double total = 0.0;
-	for(StateIndex state = 0; state < numStates_; ++state) {
-		total += probability(state);
-	}
+	visitLogicalAmplitudeChunks([&](StateIndex, const double *data, size_t elemCount) {
+		for(size_t elem = 0; elem + 1u < elemCount; elem += 2u) {
+			total += data[elem] * data[elem] + data[elem + 1u] * data[elem + 1u];
+		}
+	});
 	return total;
 }
 
@@ -262,11 +292,23 @@ StateIndex QuantumRegister::measure(IRandomSource &randomSource) const {
 	}
 	const double rnd = randomSource.nextUnitDouble();
 	double cumulative = 0.0;
-	for(StateIndex state = 0; state < numStates_; ++state) {
-		cumulative += probability(state);
-		if(rnd <= cumulative) {
-			return state;
+	StateIndex measuredState = numStates_;
+	visitLogicalAmplitudeChunks([&](StateIndex baseState, const double *data, size_t elemCount) {
+		if(measuredState != numStates_) {
+			return;
 		}
+		const size_t statesInChunk = elemCount / 2u;
+		for(size_t localState = 0; localState < statesInChunk; ++localState) {
+			const size_t elem = localState * 2u;
+			cumulative += data[elem] * data[elem] + data[elem + 1u] * data[elem + 1u];
+			if(rnd <= cumulative) {
+				measuredState = baseState + static_cast<StateIndex>(localState);
+				return;
+			}
+		}
+	});
+	if(measuredState != numStates_) {
+		return measuredState;
 	}
 	throw std::runtime_error("QuantumRegister::measure cumulative probability did not reach sample");
 }
@@ -313,12 +355,17 @@ std::ostream &operator<<(std::ostream &os, const QuantumRegister &reg) {
 		reg.backend_->printNonZeroStates(os, kDefaultPrintEpsilon);
 		return os;
 	}
-	for(StateIndex state = 0; state < reg.numStates_; ++state) {
-		const Amplitude logical = reg.amplitude(state);
-		if(std::abs(logical.real) > kDefaultPrintEpsilon || std::abs(logical.imag) > kDefaultPrintEpsilon) {
-			os << state << ": " << logical.real << " + " << logical.imag << "i\n";
+	reg.visitLogicalAmplitudeChunks([&](StateIndex baseState, const double *data, size_t elemCount) {
+		const size_t statesInChunk = elemCount / 2u;
+		for(size_t localState = 0; localState < statesInChunk; ++localState) {
+			const double real = data[localState * 2u];
+			const double imag = data[localState * 2u + 1u];
+			if(std::abs(real) > kDefaultPrintEpsilon || std::abs(imag) > kDefaultPrintEpsilon) {
+				os << (baseState + static_cast<StateIndex>(localState)) << ": "
+				   << real << " + " << imag << "i\n";
+			}
 		}
-	}
+	});
 	return os;
 }
 
@@ -332,12 +379,17 @@ void QuantumRegister::printStatesVector(double epsilon) const {
 		backend_->printNonZeroStates(std::cout, epsilon);
 		return;
 	}
-	for(StateIndex state = 0; state < numStates_; ++state) {
-		const Amplitude logical = amplitude(state);
-		if(std::abs(logical.real) > epsilon || std::abs(logical.imag) > epsilon) {
-			std::cout << state << ": " << logical.real << " + " << logical.imag << "i\n";
+	visitLogicalAmplitudeChunks([&](StateIndex baseState, const double *data, size_t elemCount) {
+		const size_t statesInChunk = elemCount / 2u;
+		for(size_t localState = 0; localState < statesInChunk; ++localState) {
+			const double real = data[localState * 2u];
+			const double imag = data[localState * 2u + 1u];
+			if(std::abs(real) > epsilon || std::abs(imag) > epsilon) {
+				std::cout << (baseState + static_cast<StateIndex>(localState)) << ": "
+				          << real << " + " << imag << "i\n";
+			}
 		}
-	}
+	});
 	return;
 }
 

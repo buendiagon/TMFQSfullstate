@@ -2,6 +2,7 @@
 #define TMFQS_REGISTER_QUANTUM_REGISTER_H
 
 #include <cstddef>
+#include <functional>
 #include <iosfwd>
 #include <memory>
 
@@ -96,6 +97,11 @@ class QuantumRegister {
 		 * @return Complex amplitude value.
 		 */
 		Amplitude amplitude(StateIndex state) const;
+		/**
+		 * @brief Exports the full logical state as an interleaved amplitude vector.
+		 * @return `[real0, imag0, ...]` for the current logical state.
+		 */
+		AmplitudesVector amplitudes() const;
 		/**
 		 * @brief Samples one basis state according to current probabilities.
 		 * @param randomSource Random source used to generate a sample in [0, 1).
@@ -229,6 +235,9 @@ class QuantumRegister {
 		Amplitude removeAffineOverlay(Amplitude logicalAmplitude) const;
 		/** @brief Computes the sum of all logical amplitudes. */
 		Amplitude logicalAmplitudeSum() const;
+		/** @brief Visits logical amplitudes chunk by chunk, applying overlay lazily when needed. */
+		void visitLogicalAmplitudeChunks(
+			const std::function<void(StateIndex baseState, const double *data, size_t elemCount)> &visitor) const;
 		/** @brief Exports the current logical state, including any active overlay. */
 		AmplitudesVector snapshotLogicalAmplitudes() const;
 };

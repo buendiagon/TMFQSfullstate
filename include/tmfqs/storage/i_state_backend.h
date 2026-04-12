@@ -1,6 +1,7 @@
 #ifndef TMFQS_STORAGE_I_STATE_BACKEND_H
 #define TMFQS_STORAGE_I_STATE_BACKEND_H
 
+#include <functional>
 #include <iosfwd>
 #include <memory>
 
@@ -8,6 +9,9 @@
 #include "tmfqs/gates/quantum_gate.h"
 
 namespace tmfqs {
+
+/** @brief Callback used to stream one contiguous chunk of amplitudes. */
+using AmplitudeChunkVisitor = std::function<void(StateIndex baseState, const double *data, size_t elemCount)>;
 
 /**
  * @brief Polymorphic storage backend interface for quantum state operations.
@@ -50,6 +54,16 @@ class IStateBackend {
 		 * @param amplitudes Interleaved amplitudes `[real0, imag0, ...]`.
 		 */
 		virtual void loadAmplitudes(unsigned int numQubits, AmplitudesVector amplitudes) = 0;
+		/**
+		 * @brief Exports the full interleaved amplitude vector.
+		 * @param out Destination buffer resized to `[real0, imag0, ...]`.
+		 */
+		virtual void exportAmplitudes(AmplitudesVector &out) const = 0;
+		/**
+		 * @brief Visits amplitude storage chunk by chunk without materializing the full state.
+		 * @param visitor Callback receiving chunk base state, data pointer, and element count.
+		 */
+		virtual void forEachAmplitudeChunk(const AmplitudeChunkVisitor &visitor) const = 0;
 
 		/**
 		 * @brief Reads amplitude for one basis state.

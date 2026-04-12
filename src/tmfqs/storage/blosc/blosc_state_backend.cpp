@@ -417,6 +417,45 @@ class BloscStateBackend final : public IStateBackend {
 			}
 		}
 
+		/** @brief Exports the full logical state by reading each chunk once. */
+		void exportAmplitudes(AmplitudesVector &out) const override {
+			ensureInitialized("amplitude export");
+			out.assign(checkedAmplitudeElementCount(numQubits_), 0.0);
+			std::vector<double> buffer;
+			size_t baseElem = 0u;
+			for(size_t chunkIndex = 0; chunkIndex < layout_.chunkCount(); ++chunkIndex) {
+				const std::vector<double> *cached = cache_.findBuffer(chunkIndex);
+				const double *data = nullptr;
+				const size_t elemCount = chunkElemCount(chunkIndex);
+				if(cached) {
+					data = cached->data();
+				} else {
+					codec_.readChunk(chunkIndex, buffer, elemCount);
+					data = buffer.data();
+				}
+				std::copy(data, data + elemCount, out.begin() + static_cast<std::ptrdiff_t>(baseElem));
+				baseElem += elemCount;
+			}
+		}
+
+		/** @brief Visits logical storage chunk by chunk without materializing the full state. */
+		void forEachAmplitudeChunk(const AmplitudeChunkVisitor &visitor) const override {
+			ensureInitialized("amplitude chunk iteration");
+			std::vector<double> buffer;
+			for(size_t chunkIndex = 0; chunkIndex < layout_.chunkCount(); ++chunkIndex) {
+				const std::vector<double> *cached = cache_.findBuffer(chunkIndex);
+				const double *data = nullptr;
+				const size_t elemCount = chunkElemCount(chunkIndex);
+				if(cached) {
+					data = cached->data();
+				} else {
+					codec_.readChunk(chunkIndex, buffer, elemCount);
+					data = buffer.data();
+				}
+				visitor(static_cast<StateIndex>(layout_.chunkStateBegin(chunkIndex)), data, elemCount);
+			}
+		}
+
 		/** @brief Reads one basis-state amplitude. */
 		Amplitude amplitude(StateIndex state) const override {
 			ensureInitialized("amplitude query");

@@ -7,6 +7,18 @@
 
 namespace {
 
+class FixedRandomSource final : public tmfqs::IRandomSource {
+	public:
+		explicit FixedRandomSource(double value) : value_(value) {}
+
+		double nextUnitDouble() override {
+			return value_;
+		}
+
+	private:
+		double value_ = 0.0;
+};
+
 void testResolvedStrategyConsistency() {
 	using namespace tmfqs;
 	std::cout << "=== strategy resolution consistency ===\n";
@@ -118,6 +130,71 @@ void testDenseVsZfpSmoke() {
 	algorithms::executeOperations(denseReg, ops);
 	algorithms::executeOperations(zfpReg, ops);
 	tmfqs_test::assertRegistersClose(denseReg, zfpReg, 5e-3);
+}
+
+void testOverlayMeasurementParity() {
+	using namespace tmfqs;
+	std::cout << "=== overlay measurement parity ===\n";
+
+	const AmplitudesVector amplitudes = {
+		0.20, 0.10,
+		-0.15, 0.05,
+		0.30, -0.20,
+		0.00, 0.10,
+		-0.25, -0.15,
+		0.18, 0.12,
+		-0.08, 0.04,
+		0.22, -0.06
+	};
+
+	auto meanOf = [](const QuantumRegister &reg) {
+		Amplitude mean{0.0, 0.0};
+		for(unsigned int state = 0; state < reg.stateCount(); ++state) {
+			const Amplitude amp = reg.amplitude(state);
+			mean.real += amp.real;
+			mean.imag += amp.imag;
+		}
+		mean.real /= static_cast<double>(reg.stateCount());
+		mean.imag /= static_cast<double>(reg.stateCount());
+		return mean;
+	};
+
+	RegisterConfig denseCfg;
+	denseCfg.strategy = StorageStrategyKind::Dense;
+	QuantumRegister denseReg(3, amplitudes, denseCfg);
+	const Amplitude mean = meanOf(denseReg);
+	denseReg.applyInversionAboutMean(mean);
+
+	const double expectedTotalProbability = denseReg.totalProbability();
+	const double measurementSample = expectedTotalProbability * 0.5;
+	FixedRandomSource denseRnd(measurementSample);
+	const StateIndex expected = denseReg.measure(denseRnd);
+
+	if(StorageStrategyRegistry::isAvailable(StorageStrategyKind::Blosc)) {
+		RegisterConfig bloscCfg;
+		bloscCfg.strategy = StorageStrategyKind::Blosc;
+		bloscCfg.blosc.chunkStates = 4;
+		bloscCfg.blosc.gateCacheSlots = 4;
+		QuantumRegister bloscReg(3, amplitudes, bloscCfg);
+		bloscReg.applyInversionAboutMean(mean);
+		FixedRandomSource bloscRnd(measurementSample);
+		TMFQS_TEST_REQUIRE(bloscReg.measure(bloscRnd) == expected);
+		TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(bloscReg.totalProbability(), expectedTotalProbability, 1e-9));
+	}
+
+	if(StorageStrategyRegistry::isAvailable(StorageStrategyKind::Zfp)) {
+		RegisterConfig zfpCfg;
+		zfpCfg.strategy = StorageStrategyKind::Zfp;
+		zfpCfg.zfp.mode = ZfpCompressionMode::FixedRate;
+		zfpCfg.zfp.rate = 64.0;
+		zfpCfg.zfp.chunkStates = 4;
+		zfpCfg.zfp.gateCacheSlots = 4;
+		QuantumRegister zfpReg(3, amplitudes, zfpCfg);
+		zfpReg.applyInversionAboutMean(mean);
+		FixedRandomSource zfpRnd(measurementSample);
+		TMFQS_TEST_REQUIRE(zfpReg.measure(zfpRnd) == expected);
+		TMFQS_TEST_REQUIRE(tmfqs_test::approxEqual(zfpReg.totalProbability(), expectedTotalProbability, 1e-6));
+	}
 }
 
 void testZfpRegisterCopySemantics() {
@@ -286,6 +363,7 @@ int main() {
 	testDenseVsBloscParity();
 	testApplyGateBuiltinDispatchParity();
 	testDenseVsZfpSmoke();
+	testOverlayMeasurementParity();
 	testZfpRegisterCopySemantics();
 	testZfpThreadedRoundTripFallback();
 	testBackendAutoTuningHeuristics();

@@ -124,6 +124,18 @@ class DenseStateBackend final : public IStateBackend {
 			amplitudes_ = std::move(amplitudes);
 		}
 
+		/** @brief Copies the full interleaved amplitude buffer into `out`. */
+		void exportAmplitudes(AmplitudesVector &out) const override {
+			ensureInitialized("amplitude export");
+			out = amplitudes_;
+		}
+
+		/** @brief Visits the dense amplitude buffer as one contiguous chunk. */
+		void forEachAmplitudeChunk(const AmplitudeChunkVisitor &visitor) const override {
+			ensureInitialized("amplitude chunk iteration");
+			visitor(0u, amplitudes_.data(), amplitudes_.size());
+		}
+
 		/** @brief Returns complex amplitude for one basis state. */
 		Amplitude amplitude(StateIndex state) const override {
 			ensureInitialized("amplitude query");
