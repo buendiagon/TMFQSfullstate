@@ -1,4 +1,0 @@
-Input family: random-phase
-Random seed: 123456
-Measured state (k): 3200403
-Calculated r (N/k): 1.31055

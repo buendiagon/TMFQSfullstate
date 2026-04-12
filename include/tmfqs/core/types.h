@@ -2,6 +2,7 @@
 #define TMFQS_CORE_TYPES_H
 
 #include <cstddef>
+#include <cstdint>
 #include <initializer_list>
 #include <utility>
 #include <vector>
@@ -11,7 +12,7 @@ namespace tmfqs {
 /** @brief Index of a qubit in a register (0 is most-significant). */
 using QubitIndex = unsigned int;
 /** @brief Index of a basis state in the computational basis. */
-using StateIndex = unsigned int;
+using StateIndex = std::uint64_t;
 
 /**
  * @brief Complex amplitude stored as separate real and imaginary parts.

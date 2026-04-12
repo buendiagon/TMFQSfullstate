@@ -7,7 +7,7 @@
 namespace tmfqs {
 
 /**
- * @brief Abstract random source used by algorithms and measurement routines.
+ * @brief Abstract random source used by measurement routines.
  *
  * Implementations must produce values in the half-open interval [0, 1), which
  * allows callers to use cumulative probability sampling safely.

@@ -1,3 +1,0 @@
-Input family: pattern
-Measured state (k): 1572864
-Calculated r (N/k): 5.33333

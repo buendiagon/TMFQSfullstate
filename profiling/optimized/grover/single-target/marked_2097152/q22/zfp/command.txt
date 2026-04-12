@@ -1,1 +1,0 @@
-/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/grover 22 2097152 --strategy zfp 

@@ -1,11 +1,13 @@
 set(TMFQS_LIBRARY_SOURCES
+	tmfqs/circuit/circuit.cpp
 	tmfqs/register/quantum_register.cpp
+	tmfqs/state/quantum_state.cpp
+	tmfqs/sim/simulator.cpp
+	tmfqs/experiment/comparison.cpp
+	tmfqs/experiment/report.cpp
 	tmfqs/gates/quantum_gate.cpp
 	tmfqs/core/math.cpp
 	tmfqs/core/random.cpp
-	tmfqs/algorithms/operations.cpp
-	tmfqs/algorithms/qft.cpp
-	tmfqs/algorithms/grover.cpp
 	tmfqs/storage/factory/state_backend_factory.cpp
 	tmfqs/storage/factory/storage_strategy_registry.cpp
 	tmfqs/storage/dense/dense_state_backend.cpp

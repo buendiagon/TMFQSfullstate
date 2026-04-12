@@ -82,10 +82,10 @@ tmfqs::RegisterConfig makeThesisZfpConfig(tmfqs::StorageWorkloadHint hint) {
 	return cfg;
 }
 
-std::vector<tmfqs::StateIndex> choosePatternStates(unsigned int totalStates) {
+std::vector<tmfqs::StateIndex> choosePatternStates(tmfqs::StateIndex totalStates) {
 	std::vector<tmfqs::StateIndex> states;
-	for(unsigned int x = 0;; ++x) {
-		const unsigned int state = 8u * x + (x % 2u);
+	for(tmfqs::StateIndex x = 0;; ++x) {
+		const tmfqs::StateIndex state = 8u * x + (x % 2u);
 		if(state >= totalStates) {
 			break;
 		}
@@ -94,12 +94,12 @@ std::vector<tmfqs::StateIndex> choosePatternStates(unsigned int totalStates) {
 	return states;
 }
 
-tmfqs::AmplitudesVector buildRandomPhaseInput(unsigned int totalStates) {
+tmfqs::AmplitudesVector buildRandomPhaseInput(tmfqs::StateIndex totalStates) {
 	std::mt19937 randomGenerator(kRandomPhaseSeed);
 	std::uniform_real_distribution<double> phaseDistribution(0.0, 2.0 * std::acos(-1.0));
 	const double norm = 1.0 / std::sqrt(static_cast<double>(totalStates));
 	tmfqs::AmplitudesVector amplitudes(static_cast<size_t>(totalStates) * 2u, 0.0);
-	for(unsigned int state = 0; state < totalStates; ++state) {
+	for(tmfqs::StateIndex state = 0; state < totalStates; ++state) {
 		const double phase = phaseDistribution(randomGenerator);
 		amplitudes[static_cast<size_t>(state) * 2u] = norm * std::cos(phase);
 		amplitudes[static_cast<size_t>(state) * 2u + 1u] = norm * std::sin(phase);
@@ -107,114 +107,52 @@ tmfqs::AmplitudesVector buildRandomPhaseInput(unsigned int totalStates) {
 	return amplitudes;
 }
 
-unsigned int computeGroverIterations(unsigned int stateCount, size_t markedCount) {
-	if(markedCount == 0u) {
-		throw std::invalid_argument("Grover case requires at least one marked state");
-	}
-	const double idealIterations =
-		(tmfqs::kPi / 4.0) *
-		std::sqrt(static_cast<double>(stateCount) / static_cast<double>(markedCount));
-	return static_cast<unsigned int>(std::floor(idealIterations));
-}
-
-tmfqs::QuantumRegister runGroverState(
+tmfqs::state::QuantumState runGroverState(
 	unsigned int qubits,
 	const std::vector<tmfqs::StateIndex> &markedStates,
 	const tmfqs::RegisterConfig &cfg) {
-	const unsigned int stateCount = tmfqs::checkedStateCount(qubits);
-	tmfqs::QuantumRegister quantumRegister(qubits, cfg);
-	quantumRegister.beginOperationBatch();
-	for(unsigned int q = 0; q < qubits; ++q) {
-		quantumRegister.applyHadamard(q);
-	}
-
-	tmfqs::Amplitude amplitudeSum{std::sqrt(static_cast<double>(stateCount)), 0.0};
-	const unsigned int iterations = computeGroverIterations(stateCount, markedStates.size());
-	for(unsigned int iteration = 0; iteration < iterations; ++iteration) {
-		tmfqs::Amplitude markedAmplitudeSum{0.0, 0.0};
-		for(tmfqs::StateIndex markedState : markedStates) {
-			const tmfqs::Amplitude amp = quantumRegister.amplitude(markedState);
-			markedAmplitudeSum.real += amp.real;
-			markedAmplitudeSum.imag += amp.imag;
-			quantumRegister.applyPhaseFlipBasisState(markedState);
-		}
-		amplitudeSum.real -= 2.0 * markedAmplitudeSum.real;
-		amplitudeSum.imag -= 2.0 * markedAmplitudeSum.imag;
-		quantumRegister.applyInversionAboutMean({
-			amplitudeSum.real / static_cast<double>(stateCount),
-			amplitudeSum.imag / static_cast<double>(stateCount)
-		});
-	}
-	quantumRegister.endOperationBatch();
-	return quantumRegister;
+	tmfqs::circuit::GroverCircuitOptions circuitOptions;
+	circuitOptions.markedStates = tmfqs::BasisStateList(markedStates);
+	circuitOptions.materializedDiffusion = false;
+	tmfqs::sim::ExecutionConfig execution;
+	execution.backend = cfg;
+	const tmfqs::sim::RunResult run = tmfqs::sim::Simulator(execution).run(
+		tmfqs::circuit::makeGrover(qubits, std::move(circuitOptions)),
+		tmfqs::state::QuantumState::basis(qubits));
+	return run.state;
 }
 
-tmfqs::QuantumRegister runQftPatternState(unsigned int qubits, const tmfqs::RegisterConfig &cfg) {
-	const unsigned int totalStates = tmfqs::checkedStateCount(qubits);
-	tmfqs::QuantumRegister quantumRegister(qubits, cfg);
-	quantumRegister.initUniformSuperposition(tmfqs::BasisStateList(choosePatternStates(totalStates)));
-	tmfqs::algorithms::qftInPlace(quantumRegister);
-	return quantumRegister;
+tmfqs::state::QuantumState runQftPatternState(unsigned int qubits, const tmfqs::RegisterConfig &cfg) {
+	const tmfqs::StateIndex totalStates = tmfqs::checkedStateCount(qubits);
+	tmfqs::sim::ExecutionConfig execution;
+	execution.backend = cfg;
+	const tmfqs::sim::RunResult run = tmfqs::sim::Simulator(execution).run(
+		tmfqs::circuit::makeQft(qubits),
+		tmfqs::state::QuantumState::uniformSubset(qubits, tmfqs::BasisStateList(choosePatternStates(totalStates))));
+	return run.state;
 }
 
-tmfqs::QuantumRegister runQftRandomPhaseState(unsigned int qubits, const tmfqs::RegisterConfig &cfg) {
-	tmfqs::QuantumRegister quantumRegister(
-		qubits,
-		buildRandomPhaseInput(tmfqs::checkedStateCount(qubits)),
-		cfg);
-	tmfqs::algorithms::qftInPlace(quantumRegister);
-	return quantumRegister;
+tmfqs::state::QuantumState runQftRandomPhaseState(unsigned int qubits, const tmfqs::RegisterConfig &cfg) {
+	tmfqs::sim::ExecutionConfig execution;
+	execution.backend = cfg;
+	const tmfqs::sim::RunResult run = tmfqs::sim::Simulator(execution).run(
+		tmfqs::circuit::makeQft(qubits),
+		tmfqs::state::QuantumState::fromAmplitudes(qubits, buildRandomPhaseInput(tmfqs::checkedStateCount(qubits))));
+	return run.state;
 }
 
-ComparisonMetrics compareAmplitudeVectors(
-	const tmfqs::AmplitudesVector &dense,
-	const tmfqs::AmplitudesVector &zfp) {
-	if(dense.size() != zfp.size()) {
-		throw std::invalid_argument("Dense and ZFP vectors must have the same size");
-	}
-	if(dense.size() % 2u != 0u) {
-		throw std::invalid_argument("Amplitude vectors must have even length");
-	}
-
+ComparisonMetrics compareStates(const tmfqs::state::QuantumState &dense, const tmfqs::state::QuantumState &zfp) {
+	const tmfqs::experiment::StateComparison comparison = tmfqs::experiment::compareStates(
+		dense,
+		zfp);
 	ComparisonMetrics metrics;
-	double diffNormSq = 0.0;
-	double refNormSq = 0.0;
-	double denseTotalProbability = 0.0;
-	double zfpTotalProbability = 0.0;
-	const size_t stateCount = dense.size() / 2u;
-
-	for(size_t state = 0; state < stateCount; ++state) {
-		const size_t elem = state * 2u;
-		const double denseReal = dense[elem];
-		const double denseImag = dense[elem + 1u];
-		const double zfpReal = zfp[elem];
-		const double zfpImag = zfp[elem + 1u];
-		const double diffReal = zfpReal - denseReal;
-		const double diffImag = zfpImag - denseImag;
-		const double stateDiffSq = diffReal * diffReal + diffImag * diffImag;
-		const double stateAbsError = std::sqrt(stateDiffSq);
-		if(stateAbsError > metrics.maxAbsAmplitudeError) {
-			metrics.maxAbsAmplitudeError = stateAbsError;
-			metrics.worstState = static_cast<tmfqs::StateIndex>(state);
-		}
-		metrics.maxAbsComponentError = std::max(
-			metrics.maxAbsComponentError,
-			std::max(std::abs(diffReal), std::abs(diffImag)));
-		diffNormSq += stateDiffSq;
-		refNormSq += denseReal * denseReal + denseImag * denseImag;
-
-		const double denseProbability = denseReal * denseReal + denseImag * denseImag;
-		const double zfpProbability = zfpReal * zfpReal + zfpImag * zfpImag;
-		denseTotalProbability += denseProbability;
-		zfpTotalProbability += zfpProbability;
-		metrics.maxAbsProbabilityError = std::max(
-			metrics.maxAbsProbabilityError,
-			std::abs(zfpProbability - denseProbability));
-	}
-
-	metrics.rmseAmplitude = std::sqrt(diffNormSq / static_cast<double>(stateCount));
-	metrics.relL2 = refNormSq == 0.0 ? 0.0 : std::sqrt(diffNormSq / refNormSq);
-	metrics.totalProbabilityDiff = std::abs(zfpTotalProbability - denseTotalProbability);
+	metrics.maxAbsAmplitudeError = comparison.maxAbsAmplitudeError;
+	metrics.maxAbsComponentError = comparison.maxAbsComponentError;
+	metrics.rmseAmplitude = comparison.rmseAmplitude;
+	metrics.relL2 = comparison.relL2;
+	metrics.maxAbsProbabilityError = comparison.maxAbsProbabilityError;
+	metrics.totalProbabilityDiff = comparison.totalProbabilityDiff;
+	metrics.worstState = comparison.worstState;
 	return metrics;
 }
 
@@ -336,7 +274,7 @@ int main(int argc, char *argv[]) {
 		std::vector<SummaryRow> allRows;
 
 		for(unsigned int qubitCount : qubits) {
-			const unsigned int stateCount = tmfqs::checkedStateCount(qubitCount);
+			const tmfqs::StateIndex stateCount = tmfqs::checkedStateCount(qubitCount);
 			const tmfqs::StateIndex s1 = stateCount / 8u;
 			const tmfqs::StateIndex s2 = stateCount / 2u;
 			const tmfqs::StateIndex s3 = (7u * stateCount) / 8u;
@@ -345,9 +283,9 @@ int main(int argc, char *argv[]) {
 			const tmfqs::RegisterConfig zfpGroverCfg = makeThesisZfpConfig(tmfqs::StorageWorkloadHint::Grover);
 			std::vector<ComparisonMetrics> groverSingleRuns;
 			for(tmfqs::StateIndex markedState : std::vector<tmfqs::StateIndex>{s1, s2, s3}) {
-				const tmfqs::QuantumRegister denseReg = runGroverState(qubitCount, {markedState}, denseGroverCfg);
-				const tmfqs::QuantumRegister zfpReg = runGroverState(qubitCount, {markedState}, zfpGroverCfg);
-				groverSingleRuns.push_back(compareAmplitudeVectors(denseReg.amplitudes(), zfpReg.amplitudes()));
+				const tmfqs::state::QuantumState denseReg = runGroverState(qubitCount, {markedState}, denseGroverCfg);
+				const tmfqs::state::QuantumState zfpReg = runGroverState(qubitCount, {markedState}, zfpGroverCfg);
+				groverSingleRuns.push_back(compareStates(denseReg, zfpReg));
 			}
 			SummaryRow groverSingle = averageRows(
 				"Grover",
@@ -357,35 +295,35 @@ int main(int argc, char *argv[]) {
 			groverSingleRows.push_back(groverSingle);
 			allRows.push_back(groverSingle);
 
-			const tmfqs::QuantumRegister denseGroverMultiReg = runGroverState(qubitCount, {s1, s2, s3}, denseGroverCfg);
-			const tmfqs::QuantumRegister zfpGroverMultiReg = runGroverState(qubitCount, {s1, s2, s3}, zfpGroverCfg);
+			const tmfqs::state::QuantumState denseGroverMultiReg = runGroverState(qubitCount, {s1, s2, s3}, denseGroverCfg);
+			const tmfqs::state::QuantumState zfpGroverMultiReg = runGroverState(qubitCount, {s1, s2, s3}, zfpGroverCfg);
 			SummaryRow groverMulti = averageRows(
 				"Grover",
 				"Multiobjetivo",
 				qubitCount,
-				{compareAmplitudeVectors(denseGroverMultiReg.amplitudes(), zfpGroverMultiReg.amplitudes())});
+				{compareStates(denseGroverMultiReg, zfpGroverMultiReg)});
 			groverMultiRows.push_back(groverMulti);
 			allRows.push_back(groverMulti);
 
 			const tmfqs::RegisterConfig denseQftCfg = makeDenseConfig(tmfqs::StorageWorkloadHint::Qft);
 			const tmfqs::RegisterConfig zfpQftCfg = makeThesisZfpConfig(tmfqs::StorageWorkloadHint::Qft);
-			const tmfqs::QuantumRegister denseQftPatternReg = runQftPatternState(qubitCount, denseQftCfg);
-			const tmfqs::QuantumRegister zfpQftPatternReg = runQftPatternState(qubitCount, zfpQftCfg);
+			const tmfqs::state::QuantumState denseQftPatternReg = runQftPatternState(qubitCount, denseQftCfg);
+			const tmfqs::state::QuantumState zfpQftPatternReg = runQftPatternState(qubitCount, zfpQftCfg);
 			SummaryRow qftPattern = averageRows(
 				"QFT",
 				"Superposicion periodica",
 				qubitCount,
-				{compareAmplitudeVectors(denseQftPatternReg.amplitudes(), zfpQftPatternReg.amplitudes())});
+				{compareStates(denseQftPatternReg, zfpQftPatternReg)});
 			qftPatternRows.push_back(qftPattern);
 			allRows.push_back(qftPattern);
 
-			const tmfqs::QuantumRegister denseQftRandomReg = runQftRandomPhaseState(qubitCount, denseQftCfg);
-			const tmfqs::QuantumRegister zfpQftRandomReg = runQftRandomPhaseState(qubitCount, zfpQftCfg);
+			const tmfqs::state::QuantumState denseQftRandomReg = runQftRandomPhaseState(qubitCount, denseQftCfg);
+			const tmfqs::state::QuantumState zfpQftRandomReg = runQftRandomPhaseState(qubitCount, zfpQftCfg);
 			SummaryRow qftRandom = averageRows(
 				"QFT",
 				"Alta entropia",
 				qubitCount,
-				{compareAmplitudeVectors(denseQftRandomReg.amplitudes(), zfpQftRandomReg.amplitudes())});
+				{compareStates(denseQftRandomReg, zfpQftRandomReg)});
 			qftRandomRows.push_back(qftRandom);
 			allRows.push_back(qftRandom);
 		}

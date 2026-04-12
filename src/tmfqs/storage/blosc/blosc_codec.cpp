@@ -49,6 +49,7 @@ struct BloscCodec::Impl {
 	BloscSchunkPtr schunk;
 	blosc2_cparams schunkCParams = BLOSC2_CPARAMS_DEFAULTS;
 	BloscContextPtr compressionCtx;
+	BloscContextPtr decompressionCtx;
 	std::vector<uint8_t> compressionScratch;
 #endif
 };
@@ -138,6 +139,7 @@ void BloscCodec::resetStorage() {
 	}
 	impl_->schunk.reset(raw);
 	impl_->compressionCtx.reset();
+	impl_->decompressionCtx.reset();
 	impl_->compressionScratch.clear();
 #else
 	throw std::runtime_error("BloscCodec: blosc support is not available in this build");
@@ -263,6 +265,96 @@ void BloscCodec::writeChunk(size_t chunkIndex, const std::vector<double> &buffer
 #endif
 }
 
+/** @brief Compresses one independent chunk into a byte buffer. */
+void BloscCodec::compress(const double *data, size_t elems, std::vector<uint8_t> &out) {
+#ifdef HAVE_BLOSC2
+	if(elems == 0u) {
+		throw std::invalid_argument("BloscCodec: cannot compress empty buffer");
+	}
+	if(!impl_->compressionCtx) {
+		blosc2_cparams cparams = BLOSC2_CPARAMS_DEFAULTS;
+		cparams.compcode = static_cast<uint8_t>(cfg_.blosc.compcode);
+		cparams.clevel = cfg_.blosc.clevel;
+		cparams.nthreads = cfg_.blosc.nthreads;
+		cparams.typesize = sizeof(double);
+		cparams.filters[BLOSC2_MAX_FILTERS - 1] = cfg_.blosc.useShuffle ? BLOSC_SHUFFLE : BLOSC_NOFILTER;
+		impl_->compressionCtx = Impl::BloscContextPtr(blosc2_create_cctx(cparams));
+		if(!impl_->compressionCtx) {
+			throw std::runtime_error("BloscCodec: failed creating compression context");
+		}
+	}
+
+	const size_t srcBytes = elems * sizeof(double);
+	const size_t required = srcBytes + BLOSC2_MAX_OVERHEAD;
+	if(impl_->compressionScratch.size() < required) {
+		impl_->compressionScratch.resize(required);
+	}
+	if(srcBytes > static_cast<size_t>(std::numeric_limits<int32_t>::max()) ||
+	   impl_->compressionScratch.size() > static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
+		throw std::overflow_error("BloscCodec: chunk byte size overflow");
+	}
+
+	const int csz = blosc2_compress_ctx(
+		impl_->compressionCtx.get(),
+		data,
+		static_cast<int32_t>(srcBytes),
+		impl_->compressionScratch.data(),
+		static_cast<int32_t>(impl_->compressionScratch.size()));
+	if(csz <= 0) {
+		throw std::runtime_error("BloscCodec: chunk compress failed");
+	}
+	out.assign(impl_->compressionScratch.begin(), impl_->compressionScratch.begin() + csz);
+#else
+	(void)data;
+	(void)elems;
+	(void)out;
+	throw std::runtime_error("BloscCodec: blosc support is not available in this build");
+#endif
+}
+
+/** @brief Decompresses one independent chunk into a dense buffer. */
+void BloscCodec::decompress(const std::vector<uint8_t> &compressed, size_t expectedElems, std::vector<double> &out) const {
+#ifdef HAVE_BLOSC2
+	if(expectedElems == 0u || compressed.empty()) {
+		throw std::invalid_argument("BloscCodec: invalid chunk while decompressing");
+	}
+	if(out.size() != expectedElems) {
+		out.resize(expectedElems);
+	}
+	if(!impl_->decompressionCtx) {
+		blosc2_dparams dparams = BLOSC2_DPARAMS_DEFAULTS;
+		dparams.nthreads = cfg_.blosc.nthreads;
+		impl_->decompressionCtx = Impl::BloscContextPtr(blosc2_create_dctx(dparams));
+		if(!impl_->decompressionCtx) {
+			throw std::runtime_error("BloscCodec: failed creating decompression context");
+		}
+	}
+
+	const size_t destBytes = expectedElems * sizeof(double);
+	if(destBytes > static_cast<size_t>(std::numeric_limits<int32_t>::max()) ||
+	   compressed.size() > static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
+		throw std::overflow_error("BloscCodec: chunk byte size overflow");
+	}
+	const int dsz = blosc2_decompress_ctx(
+		impl_->decompressionCtx.get(),
+		compressed.data(),
+		static_cast<int32_t>(compressed.size()),
+		out.data(),
+		static_cast<int32_t>(destBytes));
+	if(dsz < 0) {
+		throw std::runtime_error("BloscCodec: chunk decompress failed");
+	}
+	if(dsz != static_cast<int>(destBytes)) {
+		throw std::runtime_error("BloscCodec: chunk decompress size mismatch");
+	}
+#else
+	(void)compressed;
+	(void)expectedElems;
+	(void)out;
+	throw std::runtime_error("BloscCodec: blosc support is not available in this build");
+#endif
+}
+
 /** @brief Returns number of chunks currently stored. */
 size_t BloscCodec::chunkCount() const {
 #ifdef HAVE_BLOSC2
@@ -296,6 +388,7 @@ void BloscCodec::cloneFrom(const BloscCodec &other) {
 		if(impl_) {
 			impl_->schunk.reset();
 			impl_->compressionCtx.reset();
+			impl_->decompressionCtx.reset();
 			impl_->compressionScratch.clear();
 		}
 		return;

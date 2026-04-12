@@ -1,5 +1,6 @@
 #include "tmfqsfs.h"
 
+#include <cmath>
 #include <iostream>
 #include <vector>
 
@@ -18,6 +19,39 @@ class FixedRandomSource final : public tmfqs::IRandomSource {
 	private:
 		double value_ = 0.0;
 };
+
+void applyParityCircuit(tmfqs::QuantumRegister &reg) {
+	reg.beginOperationBatch();
+	reg.applyHadamard(0);
+	reg.applyHadamard(2);
+	reg.applyControlledNot(0, 1);
+	reg.applyControlledPhaseShift(2, 3, tmfqs::kPi / 8.0);
+	reg.applySwap(1, 3);
+	reg.applyPhaseFlipBasisState(6);
+	reg.applyInversionAboutMean();
+	reg.endOperationBatch();
+}
+
+void applyCopyCircuit(tmfqs::QuantumRegister &reg) {
+	reg.beginOperationBatch();
+	reg.applyHadamard(0);
+	reg.applyHadamard(1);
+	reg.applyControlledNot(0, 2);
+	reg.applyControlledPhaseShift(1, 4, tmfqs::kPi / 9.0);
+	reg.applyPhaseFlipBasisState(9);
+	reg.applyInversionAboutMean();
+	reg.endOperationBatch();
+}
+
+void applyThreadedCircuit(tmfqs::QuantumRegister &reg) {
+	reg.beginOperationBatch();
+	reg.applyHadamard(0);
+	reg.applyControlledNot(0, 3);
+	reg.applyControlledPhaseShift(3, 4, tmfqs::kPi / 11.0);
+	reg.applyPhaseFlipBasisState(19);
+	reg.applyInversionAboutMean();
+	reg.endOperationBatch();
+}
 
 void testResolvedStrategyConsistency() {
 	using namespace tmfqs;
@@ -48,17 +82,8 @@ void testDenseVsBloscParity() {
 	QuantumRegister denseReg(4, 0, denseCfg);
 	QuantumRegister bloscReg(4, 0, bloscCfg);
 
-	const std::vector<algorithms::AlgorithmOperation> ops = {
-		algorithms::HadamardOp{0},
-		algorithms::HadamardOp{2},
-		algorithms::ControlledNotOp{0, 1},
-		algorithms::ControlledPhaseShiftOp{2, 3, kPi / 8.0},
-		algorithms::SwapOp{1, 3},
-		algorithms::PhaseFlipBasisStateOp{6},
-		algorithms::InversionAboutMeanOp{}
-	};
-	algorithms::executeOperations(denseReg, ops);
-	algorithms::executeOperations(bloscReg, ops);
+	applyParityCircuit(denseReg);
+	applyParityCircuit(bloscReg);
 	tmfqs_test::assertRegistersClose(denseReg, bloscReg, 1e-9);
 }
 
@@ -118,17 +143,8 @@ void testDenseVsZfpSmoke() {
 	QuantumRegister denseReg(4, 0, denseCfg);
 	QuantumRegister zfpReg(4, 0, zfpCfg);
 
-	const std::vector<algorithms::AlgorithmOperation> ops = {
-		algorithms::HadamardOp{0},
-		algorithms::HadamardOp{2},
-		algorithms::ControlledNotOp{0, 1},
-		algorithms::ControlledPhaseShiftOp{2, 3, kPi / 8.0},
-		algorithms::SwapOp{1, 3},
-		algorithms::PhaseFlipBasisStateOp{6},
-		algorithms::InversionAboutMeanOp{}
-	};
-	algorithms::executeOperations(denseReg, ops);
-	algorithms::executeOperations(zfpReg, ops);
+	applyParityCircuit(denseReg);
+	applyParityCircuit(zfpReg);
 	tmfqs_test::assertRegistersClose(denseReg, zfpReg, 5e-3);
 }
 
@@ -216,16 +232,8 @@ void testZfpRegisterCopySemantics() {
 
 	QuantumRegister denseReg(5, 0, denseCfg);
 	QuantumRegister zfpReg(5, 0, zfpCfg);
-	const std::vector<algorithms::AlgorithmOperation> ops = {
-		algorithms::HadamardOp{0},
-		algorithms::HadamardOp{1},
-		algorithms::ControlledNotOp{0, 2},
-		algorithms::ControlledPhaseShiftOp{1, 4, kPi / 9.0},
-		algorithms::PhaseFlipBasisStateOp{9},
-		algorithms::InversionAboutMeanOp{}
-	};
-	algorithms::executeOperations(denseReg, ops);
-	algorithms::executeOperations(zfpReg, ops);
+	applyCopyCircuit(denseReg);
+	applyCopyCircuit(zfpReg);
 
 	QuantumRegister copiedReg(zfpReg);
 	tmfqs_test::assertRegistersClose(denseReg, copiedReg, 7e-3);
@@ -262,15 +270,8 @@ void testZfpThreadedRoundTripFallback() {
 
 	QuantumRegister denseReg(5, 0, denseCfg);
 	QuantumRegister zfpReg(5, 0, zfpCfg);
-	const std::vector<algorithms::AlgorithmOperation> ops = {
-		algorithms::HadamardOp{0},
-		algorithms::ControlledNotOp{0, 3},
-		algorithms::ControlledPhaseShiftOp{3, 4, kPi / 11.0},
-		algorithms::PhaseFlipBasisStateOp{19},
-		algorithms::InversionAboutMeanOp{}
-	};
-	algorithms::executeOperations(denseReg, ops);
-	algorithms::executeOperations(zfpReg, ops);
+	applyThreadedCircuit(denseReg);
+	applyThreadedCircuit(zfpReg);
 	tmfqs_test::assertRegistersClose(denseReg, zfpReg, 5e-4);
 }
 

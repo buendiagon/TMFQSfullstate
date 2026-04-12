@@ -9,17 +9,16 @@
 #include "tmfqs/config/register_config.h"
 #include "tmfqs/core/types.h"
 #include "tmfqs/gates/quantum_gate.h"
+#include "tmfqs/storage/i_state_backend.h"
 
 namespace tmfqs {
 
 class IRandomSource;
-class IStateBackend;
-
 /**
  * @brief High-level quantum register facade over a pluggable state backend.
  *
  * This class owns backend state, validates inputs, and exposes the gate and
- * measurement operations used by algorithms.
+ * measurement operations used by circuit execution and low-level experiments.
  */
 class QuantumRegister {
 	public:
@@ -37,7 +36,7 @@ class QuantumRegister {
 		 * @param initState Basis-state index to initialize.
 		 * @param cfg Backend and compression configuration.
 		 */
-		QuantumRegister(unsigned int numQubits, unsigned int initState, const RegisterConfig &cfg = {});
+		QuantumRegister(unsigned int numQubits, StateIndex initState, const RegisterConfig &cfg = {});
 		/**
 		 * @brief Creates a register initialized with custom amplitude on one state.
 		 * @param numQubits Number of qubits.
@@ -45,7 +44,7 @@ class QuantumRegister {
 		 * @param amp Complex amplitude for `initState`.
 		 * @param cfg Backend and compression configuration.
 		 */
-		QuantumRegister(unsigned int numQubits, unsigned int initState, Amplitude amp, const RegisterConfig &cfg = {});
+		QuantumRegister(unsigned int numQubits, StateIndex initState, Amplitude amp, const RegisterConfig &cfg = {});
 		/**
 		 * @brief Creates a register from a full interleaved amplitude vector.
 		 * @param numQubits Number of qubits.
@@ -164,6 +163,11 @@ class QuantumRegister {
 		 */
 		void applyInversionAboutMean(Amplitude mean);
 		/**
+		 * @brief Applies inversion about mean by materializing backend storage.
+		 * @param mean Mean complex amplitude across the full register.
+		 */
+		void applyInversionAboutMeanMaterialized(Amplitude mean);
+		/**
 		 * @brief Applies a single-qubit Hadamard gate.
 		 * @param qubit Target qubit.
 		 */
@@ -201,7 +205,7 @@ class QuantumRegister {
 		/** @brief Number of logical qubits represented by the register. */
 		unsigned int numQubits_ = 0;
 		/** @brief Number of basis states (`2^numQubits_`). */
-		unsigned int numStates_ = 0;
+		StateIndex numStates_ = 0;
 		/** @brief User-provided configuration options. */
 		RegisterConfig config_{};
 		/** @brief Strategy resolved after availability and auto-selection logic. */

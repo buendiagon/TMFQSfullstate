@@ -82,14 +82,14 @@ QuantumRegister::QuantumRegister(unsigned int qubits, const RegisterConfig &cfg)
 }
 
 /** @brief Constructs a register initialized to one selected basis state. */
-QuantumRegister::QuantumRegister(unsigned int qubits, unsigned int initState, const RegisterConfig &cfg) {
+QuantumRegister::QuantumRegister(unsigned int qubits, StateIndex initState, const RegisterConfig &cfg) {
 	config_ = cfg;
 	initializeBackend(qubits);
 	backend_->initBasis(numQubits_, initState, {1.0, 0.0});
 }
 
 /** @brief Constructs a register initialized with custom amplitude on one state. */
-QuantumRegister::QuantumRegister(unsigned int qubits, unsigned int initState, Amplitude amp, const RegisterConfig &cfg) {
+QuantumRegister::QuantumRegister(unsigned int qubits, StateIndex initState, Amplitude amp, const RegisterConfig &cfg) {
 	config_ = cfg;
 	initializeBackend(qubits);
 	backend_->initBasis(numQubits_, initState, amp);
@@ -433,6 +433,15 @@ void QuantumRegister::applyInversionAboutMean(Amplitude mean) {
 	affineScale_ = negateAmplitude(scale);
 	affineBias_ = subAmplitude(scaleAmplitude(mean, 2.0), bias);
 	affineOverlayActive_ = true;
+}
+
+/** @brief Applies inversion-about-mean through the backend storage path. */
+void QuantumRegister::applyInversionAboutMeanMaterialized(Amplitude mean) {
+	requireInitialized("inversion about mean");
+	if(affineOverlayActive_) {
+		flushAffineOverlay();
+	}
+	backend_->inversionAboutMean(mean);
 }
 
 /** @brief Applies Hadamard to one qubit. */

@@ -1,7 +1,7 @@
-add_executable(test_algorithms integration/algorithms/test_algorithms.cpp)
-target_link_libraries(test_algorithms PRIVATE tmfqsfs)
-tmfqs_configure_runtime_target(test_algorithms)
-add_test(NAME test_algorithms COMMAND test_algorithms)
+add_executable(test_circuit integration/circuit/test_circuit.cpp)
+target_link_libraries(test_circuit PRIVATE tmfqsfs)
+tmfqs_configure_runtime_target(test_circuit)
+add_test(NAME test_circuit COMMAND test_circuit)
 
 add_executable(test_register_validation integration/register/test_register_validation.cpp)
 target_link_libraries(test_register_validation PRIVATE tmfqsfs)

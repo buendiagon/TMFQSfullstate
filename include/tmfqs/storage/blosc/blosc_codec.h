@@ -2,6 +2,7 @@
 #define TMFQS_STORAGE_BLOSC_BLOSC_CODEC_H
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -64,6 +65,20 @@ class BloscCodec {
 		 * @param elems Number of `double` elements to encode.
 		 */
 		void writeChunk(size_t chunkIndex, const std::vector<double> &buffer, size_t elems);
+		/**
+		 * @brief Compresses one independent chunk into a byte buffer.
+		 * @param data Pointer to uncompressed chunk data.
+		 * @param elems Number of `double` elements to encode.
+		 * @param out Output compressed payload.
+		 */
+		void compress(const double *data, size_t elems, std::vector<uint8_t> &out);
+		/**
+		 * @brief Decompresses one independent chunk into a dense buffer.
+		 * @param compressed Compressed payload.
+		 * @param expectedElems Expected number of `double` elements.
+		 * @param out Output dense values.
+		 */
+		void decompress(const std::vector<uint8_t> &compressed, size_t expectedElems, std::vector<double> &out) const;
 
 		/**
 		 * @brief Returns number of chunks currently stored.

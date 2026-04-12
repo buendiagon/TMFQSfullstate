@@ -1,8 +1,0 @@
-binary=/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/grover
-tracked_pid=120482
-tracked_exe=/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/grover
-psrecord_interval=0.1
-started_at=2026-03-26T17:50:30-05:00
-psrecord_status=0
-target_status=0
-finished_at=2026-03-26T17:55:10-05:00

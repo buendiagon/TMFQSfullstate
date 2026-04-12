@@ -1,1 +1,0 @@
-/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/grover 22 524288 --strategy blosc 

@@ -1,31 +1,27 @@
+#ifndef TMFQS_EXAMPLES_GROVER_CLI_H
+#define TMFQS_EXAMPLES_GROVER_CLI_H
+
 #include "tmfqsfs.h"
 
-#include <algorithm>
-#include <cmath>
 #include <cstdlib>
 #include <iostream>
-#include <random>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
+namespace tmfqs_examples {
+
 using StateList = std::vector<tmfqs::StateIndex>;
 
-enum class InputFamily {
-	Pattern,
-	RandomPhase
-};
-
-constexpr unsigned int kRandomPhaseSeed = 123456u;
-
-struct CliOptions {
+struct GroverCliOptions {
 	unsigned int qubitCount = 0;
-	InputFamily inputFamily = InputFamily::Pattern;
+	StateList markedStates;
+	bool verbose = false;
 	tmfqs::RegisterConfig registerConfig;
 };
 
-static bool parseUnsigned(const char *text, unsigned int &valueOut) {
+inline bool parseUnsigned(const char *text, unsigned int &valueOut) {
 	char *end = nullptr;
 	const unsigned long value = std::strtoul(text, &end, 10);
 	if(text == end || *end != '\0') {
@@ -35,7 +31,17 @@ static bool parseUnsigned(const char *text, unsigned int &valueOut) {
 	return true;
 }
 
-static bool parseDouble(const char *text, double &valueOut) {
+inline bool parseStateIndex(const char *text, tmfqs::StateIndex &valueOut) {
+	char *end = nullptr;
+	const unsigned long long value = std::strtoull(text, &end, 10);
+	if(text == end || *end != '\0') {
+		return false;
+	}
+	valueOut = static_cast<tmfqs::StateIndex>(value);
+	return true;
+}
+
+inline bool parseDouble(const char *text, double &valueOut) {
 	char *end = nullptr;
 	const double value = std::strtod(text, &end);
 	if(text == end || *end != '\0') {
@@ -45,42 +51,30 @@ static bool parseDouble(const char *text, double &valueOut) {
 	return true;
 }
 
-static StateList sanitizeStates(const StateList &input, tmfqs::StateIndex totalStates) {
-	StateList states;
-	for(tmfqs::StateIndex state : input) {
-		if(state < totalStates) {
-			states.push_back(state);
+inline bool parseMarkedStatesCsv(const char *text, StateList &markedStatesOut) {
+	std::string token;
+	for(const char ch : std::string(text)) {
+		if(ch == ',') {
+			tmfqs::StateIndex state = 0;
+			if(token.empty() || !parseStateIndex(token.c_str(), state)) {
+				return false;
+			}
+			markedStatesOut.push_back(state);
+			token.clear();
+			continue;
 		}
+		token.push_back(ch);
 	}
-	std::sort(states.begin(), states.end());
-	states.erase(std::unique(states.begin(), states.end()), states.end());
-	return states;
+
+	tmfqs::StateIndex state = 0;
+	if(token.empty() || !parseStateIndex(token.c_str(), state)) {
+		return false;
+	}
+	markedStatesOut.push_back(state);
+	return true;
 }
 
-static StateList chooseInputStates(tmfqs::StateIndex totalStates) {
-	StateList states;
-	for(tmfqs::StateIndex x = 0;; ++x) {
-		const tmfqs::StateIndex y = 8u * x + (x % 2u);
-		if(y >= totalStates) break;
-		states.push_back(y);
-	}
-	return states;
-}
-
-static tmfqs::AmplitudesVector buildRandomPhaseInput(tmfqs::StateIndex totalStates) {
-	std::mt19937 randomGenerator(kRandomPhaseSeed);
-	std::uniform_real_distribution<double> phaseDistribution(0.0, 2.0 * std::acos(-1.0));
-	const double norm = 1.0 / std::sqrt(static_cast<double>(totalStates));
-	tmfqs::AmplitudesVector amplitudes(static_cast<size_t>(totalStates) * 2u, 0.0);
-	for(tmfqs::StateIndex state = 0; state < totalStates; ++state) {
-		const double phase = phaseDistribution(randomGenerator);
-		amplitudes[static_cast<size_t>(state) * 2u] = norm * std::cos(phase);
-		amplitudes[static_cast<size_t>(state) * 2u + 1u] = norm * std::sin(phase);
-	}
-	return amplitudes;
-}
-
-static tmfqs::StorageStrategyKind parseStrategy(const std::string &value) {
+inline tmfqs::StorageStrategyKind parseStrategy(const std::string &value) {
 	if(value == "dense") return tmfqs::StorageStrategyKind::Dense;
 	if(value == "blosc") return tmfqs::StorageStrategyKind::Blosc;
 	if(value == "zfp") return tmfqs::StorageStrategyKind::Zfp;
@@ -88,32 +82,26 @@ static tmfqs::StorageStrategyKind parseStrategy(const std::string &value) {
 	throw std::invalid_argument("Unknown strategy: " + value);
 }
 
-static tmfqs::ZfpCompressionMode parseZfpMode(const std::string &value) {
+inline tmfqs::ZfpCompressionMode parseZfpMode(const std::string &value) {
 	if(value == "rate") return tmfqs::ZfpCompressionMode::FixedRate;
 	if(value == "precision") return tmfqs::ZfpCompressionMode::FixedPrecision;
 	if(value == "accuracy") return tmfqs::ZfpCompressionMode::FixedAccuracy;
 	throw std::invalid_argument("Unknown zfp mode: " + value);
 }
 
-static InputFamily parseInputFamily(const std::string &value) {
-	if(value == "pattern") return InputFamily::Pattern;
-	if(value == "random-phase") return InputFamily::RandomPhase;
-	throw std::invalid_argument("Unknown input family: " + value);
-}
-
-static void printUsage() {
+inline void printGroverUsage(const char *binaryName) {
 	std::cout
-		<< "Usage: ./qftG <num_qubits> [--input-family pattern|random-phase] "
-		<< "[--strategy dense|blosc|zfp|auto] [--chunk-states N] [--cache-slots N] "
-		<< "[--clevel N] [--nthreads N] [--threshold-mb N] "
+		<< "Usage: ./" << binaryName << " <num_qubits> <marked_state[,marked_state...]> "
+		<< "[--verbose] [--strategy dense|blosc|zfp|auto] [--chunk-states N] "
+		<< "[--cache-slots N] [--clevel N] [--nthreads N] [--threshold-mb N] "
 		<< "[--zfp-mode rate|precision|accuracy] [--zfp-rate R] "
 		<< "[--zfp-precision B] [--zfp-accuracy A] [--zfp-chunk-states N] "
 		<< "[--zfp-cache-slots N]\n";
 }
 
-static bool parseArgs(int argc, char *argv[], CliOptions &optionsOut) {
-	if(argc < 2) {
-		printUsage();
+inline bool parseGroverArgs(int argc, char *argv[], const char *binaryName, GroverCliOptions &optionsOut) {
+	if(argc < 3) {
+		printGroverUsage(binaryName);
 		return false;
 	}
 
@@ -125,12 +113,15 @@ static bool parseArgs(int argc, char *argv[], CliOptions &optionsOut) {
 		std::cout << "Number of qubits is too large for this example.\n";
 		return false;
 	}
+	if(!parseMarkedStatesCsv(argv[2], optionsOut.markedStates) || optionsOut.markedStates.empty()) {
+		std::cout << "Marked states must be a comma-separated list of integers.\n";
+		return false;
+	}
 
-	for(int i = 2; i < argc; ++i) {
+	for(int i = 3; i < argc; ++i) {
 		const std::string arg = argv[i];
-		if(arg == "--input-family") {
-			if(i + 1 >= argc) return false;
-			optionsOut.inputFamily = parseInputFamily(argv[++i]);
+		if(arg == "--verbose") {
+			optionsOut.verbose = true;
 			continue;
 		}
 		if(arg == "--strategy") {
@@ -216,71 +207,45 @@ static bool parseArgs(int argc, char *argv[], CliOptions &optionsOut) {
 			continue;
 		}
 		std::cout << "Unknown option: " << arg << "\n";
-		printUsage();
+		printGroverUsage(binaryName);
 		return false;
 	}
 	return true;
 }
 
-static bool buildInputStates(tmfqs::StateIndex totalStates, StateList &selectedStatesOut) {
-	selectedStatesOut = sanitizeStates(chooseInputStates(totalStates), totalStates);
-	if(selectedStatesOut.empty()) {
-		std::cout << "No valid selected states were generated.\n";
-		return false;
-	}
-	return true;
-}
-
-int main(int argc, char *argv[]) {
+inline int runGroverCli(int argc, char *argv[], const char *binaryName, const char *modeName, bool materializedDiffusion) {
+	using namespace tmfqs;
 	try {
-		CliOptions options;
-		if(!parseArgs(argc, argv, options)) {
+		GroverCliOptions options;
+		if(!parseGroverArgs(argc, argv, binaryName, options)) {
 			return 1;
 		}
 
-		const tmfqs::StateIndex totalStates = tmfqs::checkedStateCount(options.qubitCount);
-		if(options.registerConfig.workloadHint == tmfqs::StorageWorkloadHint::Generic) {
-			options.registerConfig.workloadHint = tmfqs::StorageWorkloadHint::Qft;
-		}
-		tmfqs::state::QuantumState inputState;
-		if(options.inputFamily == InputFamily::RandomPhase) {
-			inputState = tmfqs::state::QuantumState::fromAmplitudes(
-				options.qubitCount,
-				buildRandomPhaseInput(totalStates));
-		} else {
-			StateList selectedStates;
-			if(!buildInputStates(totalStates, selectedStates)) {
-				return 1;
-			}
-			inputState = tmfqs::state::QuantumState::uniformSubset(
-				options.qubitCount,
-				tmfqs::BasisStateList(std::move(selectedStates)));
-		}
-		tmfqs::sim::ExecutionConfig execution;
+		Mt19937RandomSource randomSource;
+		circuit::GroverCircuitOptions circuitOptions;
+		circuitOptions.markedStates = BasisStateList(std::move(options.markedStates));
+		circuitOptions.materializedDiffusion = materializedDiffusion;
+		const circuit::Circuit circuit = circuit::makeGrover(options.qubitCount, std::move(circuitOptions));
+		sim::ExecutionConfig execution;
 		execution.backend = options.registerConfig;
-		const tmfqs::sim::RunResult run =
-			tmfqs::sim::Simulator(execution).run(tmfqs::circuit::makeQft(options.qubitCount), inputState);
-
-		tmfqs::Mt19937RandomSource randomSource;
-		const tmfqs::StateIndex measuredState = run.state.measure(randomSource);
-		std::cout << "Input family: "
-		          << (options.inputFamily == InputFamily::RandomPhase ? "random-phase" : "pattern")
+		execution.observability.traceOperations = options.verbose;
+		const sim::RunResult run = sim::Simulator(execution).run(circuit, state::QuantumState::basis(options.qubitCount));
+		const StateIndex result = run.state.measure(randomSource);
+		std::cout << "Grover mode: " << modeName << "\n";
+		std::cout << "Resolved strategy: "
+		          << StorageStrategyRegistry::toString(
+		                 StorageStrategyRegistry::resolve(options.qubitCount, options.registerConfig))
 		          << "\n";
-		if(options.inputFamily == InputFamily::RandomPhase) {
-			std::cout << "Random seed: " << kRandomPhaseSeed << "\n";
-		}
-		std::cout << "Measured state (k): " << measuredState << "\n";
-		std::cout << "Calculated r (N/k): ";
-		if(measuredState == 0) {
-			std::cout << "undefined (division by zero)\n";
-		} else {
-			std::cout << (static_cast<double>(totalStates) / static_cast<double>(measuredState)) << "\n";
+		std::cout << "Grover search result: " << result << "\n";
+		if(options.verbose) {
+			std::cout << "Circuit operations: " << run.report.operationCount << "\n";
+			std::cout << "Execution seconds: " << run.report.executionSeconds << "\n";
 		}
 		return 0;
 	} catch(const std::exception &ex) {
-		std::cout << "qftG error: " << ex.what() << "\n";
+		std::cout << binaryName << " error: " << ex.what() << "\n";
 		std::cout << "Available strategies: ";
-		auto names = tmfqs::StorageStrategyRegistry::listAvailable();
+		const auto names = tmfqs::StorageStrategyRegistry::listAvailable();
 		for(size_t i = 0; i < names.size(); ++i) {
 			std::cout << names[i];
 			if(i + 1 < names.size()) std::cout << ", ";
@@ -289,3 +254,7 @@ int main(int argc, char *argv[]) {
 		return 2;
 	}
 }
+
+} // namespace tmfqs_examples
+
+#endif // TMFQS_EXAMPLES_GROVER_CLI_H

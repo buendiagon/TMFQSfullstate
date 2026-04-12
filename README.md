@@ -1,12 +1,12 @@
 # TMFQS
 
-TMFQS is a C++17 state-vector quantum simulator for learning, experimentation, and backend strategy research. It provides a shared library (`tmfqsfs`), public C++ headers (`tmfqsfs.h`), example binaries, integration tests, and backend benchmarking tools.
+TMFQS is a C++17 state-vector quantum simulator for learning, experimentation, and backend strategy research. It provides a shared library (`tmfqsfs`), public C++ headers (`tmfqsfs.h`), focused example binaries, integration tests, and backend benchmarking tools.
 
 ## What You Get
 
 - A C++ library built from `src/` and emitted under the selected CMake build directory
 - Public API headers under `include/` with umbrella include `tmfqsfs.h`
-- Example programs in `examples/` compiled into `build/<preset>/bin/`
+- Focused example programs in `examples/` compiled into `build/<preset>/bin/`
 - Integration test suites in `tests/integration/`
 - Runtime-selectable storage backends: Dense, Blosc, ZFP, and Auto
 - Benchmark tools in `benchmarks/` for backend performance and regression checks
@@ -40,7 +40,7 @@ ctest --preset dev
 
 Expected result: the program runs Grover search for state `|5>` in a 3-qubit space and prints the resolved backend and measured state.
 
-`dev` is the recommended day-to-day preset: it uses `RelWithDebInfo` so the examples stay fast while preserving symbols for profiling and debugging. Use `debug` when you specifically need an unoptimized `-O0` build.
+`dev` is the recommended day-to-day preset: it uses `RelWithDebInfo` so the examples stay fast while preserving symbols for debugging. Use `debug` when you specifically need an unoptimized `-O0` build.
 
 ## Usage
 
@@ -49,25 +49,20 @@ Preset builds place runnable binaries in `build/<preset>/bin/`. The build tree i
 ### Binary Quick Reference
 
 ```bash
-./build/dev/bin/qft <num_qubits> <initial_state>
-./build/dev/bin/grover <num_qubits> <marked_state[,marked_state...]> [options]
-./build/dev/bin/applyHadamard <num_qubits> <qubit> <init_state>
-./build/dev/bin/applyControlledNot <num_qubits> <control_qubit> <target_qubit>
-./build/dev/bin/applyControlledPhaseShift <num_qubits> <control_qubit> <target_qubit> <init_state>
-./build/dev/bin/getSumOfProbabilities <num_qubits>
 ./build/dev/bin/qftG <num_qubits> [options]
+./build/dev/bin/grover <num_qubits> <marked_state[,marked_state...]> [options]
+./build/dev/bin/grover_normal <num_qubits> <marked_state[,marked_state...]> [options]
+./build/dev/bin/zfp_error_analysis [--qubits q1,q2,...] [--csv output.csv]
 ```
 
 ### Example Commands
 
 ```bash
-./build/dev/bin/qft 3 0
+./build/dev/bin/qftG 22 --strategy dense
 ./build/dev/bin/grover 4 11
+./build/dev/bin/grover_normal 4 11
 ./build/dev/bin/grover 22 17,131071 --strategy blosc --chunk-states 16384 --cache-slots 8
-./build/dev/bin/applyHadamard 3 1 0
-./build/dev/bin/applyControlledNot 3 0 2
-./build/dev/bin/applyControlledPhaseShift 3 0 2 0
-./build/dev/bin/getSumOfProbabilities 5
+./build/dev/bin/zfp_error_analysis --qubits 18,19,20 --csv /tmp/tmfqs_zfp_error.csv
 ```
 
 ## `grover` CLI Reference
@@ -86,6 +81,8 @@ Notes:
 
 - Pass one marked state for classic Grover or a comma-separated list for a multi-marked oracle.
 - The backend options match `qftG`, and the program prints the resolved strategy before the measurement result.
+- `grover` uses the lazy affine diffusion path by default.
+- `grover_normal` accepts the same arguments but materializes inversion-about-mean through backend storage on each Grover iteration.
 
 ## `qftG` CLI Reference
 
@@ -104,7 +101,7 @@ Usage:
 | Option                 | Meaning                                                             |
 | ---------------------- | ------------------------------------------------------------------- |
 | `--input-family ...`   | `pattern` for `S={8x+(x mod 2)}` or `random-phase` for dense random phases with fixed seed. |
-| `--strategy dense`     | blosc                                                               |
+| `--strategy ...`       | Selects `dense`, `blosc`, `zfp`, or `auto`.                         |
 | `--chunk-states N`     | Blosc: basis states per compressed chunk.                           |
 | `--cache-slots N`      | Blosc: decompressed chunk cache slots used during gate application. |
 | `--clevel N`           | Blosc compression level (typically `0..9`).                         |
@@ -148,9 +145,21 @@ TMFQS can store amplitudes with different runtime backends:
 
 If an unavailable backend is explicitly requested, construction fails with a runtime error.
 
+## Architecture
+
+The public API is split into small layers:
+
+- `tmfqs::circuit`: immutable gate-sequence circuits plus QFT and Grover circuit builders.
+- `tmfqs::state`: explicit initial-state and result-state values. Use this layer for basis states, uniform subsets, random-phase states, sparse-pattern states, and controlled amplitude experiments.
+- `tmfqs::sim`: circuit execution over a selected backend through `ExecutionConfig`.
+- `tmfqs::experiment`: comparison and report utilities for backend accuracy checks.
+- `tmfqs::storage`: backend configuration and strategy selection. Dense, Blosc, and ZFP are selected through the same `RegisterConfig` path.
+
+The legacy `QuantumRegister` facade remains available for low-level experiments and storage tests, but user-facing QFT/Grover flows are built as circuits and executed by `Simulator`.
+
 ## C++ API Usage
 
-### 1. Basic `QuantumRegister` Flow
+### 1. Circuit + State Flow
 
 ```cpp
 #include "tmfqsfs.h"
@@ -158,22 +167,20 @@ If an unavailable backend is explicitly requested, construction fails with a run
 int main() {
     using namespace tmfqs;
 
-    QuantumRegister reg(3, 0);      // |000>
-    reg.applyHadamard(0);
-    reg.applyControlledNot(0, 1);
+    circuit::Circuit circuit(3);
+    circuit.h(0).cx(0, 1);
 
-    Amplitude a0 = reg.amplitude(0);
-    double p0 = reg.probability(0);
-    double total = reg.totalProbability();
+    sim::RunResult run = sim::Simulator().run(circuit, state::QuantumState::basis(3));
+    Amplitude a0 = run.state.amplitude(0);
+    double total = run.state.totalProbability();
 
     (void)a0;
-    (void)p0;
     (void)total;
     return 0;
 }
 ```
 
-### 2. Algorithms: QFT and Grover
+### 2. QFT and Grover Builders
 
 ```cpp
 #include "tmfqsfs.h"
@@ -181,23 +188,68 @@ int main() {
 int main() {
     using namespace tmfqs;
 
-    QuantumRegister qftReg(3, 0);
-    algorithms::qftInPlace(qftReg);
+    sim::RunResult qftRun =
+        sim::Simulator().run(circuit::makeQft(3), state::QuantumState::basis(3));
 
     RegisterConfig groverCfg;
     groverCfg.strategy = StorageStrategyKind::Blosc;
     groverCfg.blosc.chunkStates = 16384;
     groverCfg.blosc.gateCacheSlots = 8;
-    algorithms::GroverConfig cfg{BasisStateList{5u, 11u}, 22u, false, groverCfg};
-    Mt19937RandomSource rng(12345u);
-    StateIndex measured = algorithms::groverSearch(cfg, rng);
 
+    circuit::GroverCircuitOptions groverOptions;
+    groverOptions.markedStates = BasisStateList{5u, 11u};
+    groverOptions.materializedDiffusion = false; // true matches grover_normal
+
+    sim::ExecutionConfig execution;
+    execution.backend = groverCfg;
+    sim::RunResult groverRun = sim::Simulator(execution).run(
+        circuit::makeGrover(22, std::move(groverOptions)),
+        state::QuantumState::basis(22));
+
+    Mt19937RandomSource rng(12345u);
+    StateIndex measured = groverRun.state.measure(rng);
+
+    (void)qftRun;
     (void)measured;
     return 0;
 }
 ```
 
-### 3. Backend Selection with `RegisterConfig`
+### 3. Backend Comparison Utility
+
+```cpp
+#include "tmfqsfs.h"
+
+int main() {
+    using namespace tmfqs;
+
+    circuit::Circuit circuit = circuit::makeQft(10);
+
+    RegisterConfig denseCfg;
+    denseCfg.strategy = StorageStrategyKind::Dense;
+    sim::ExecutionConfig denseExecution;
+    denseExecution.backend = denseCfg;
+
+    RegisterConfig zfpCfg;
+    zfpCfg.strategy = StorageStrategyKind::Zfp;
+    zfpCfg.zfp.mode = ZfpCompressionMode::FixedPrecision;
+    zfpCfg.zfp.precision = 40;
+    sim::ExecutionConfig zfpExecution;
+    zfpExecution.backend = zfpCfg;
+
+    state::QuantumState input = state::QuantumState::randomPhase(10, 123456u);
+    sim::RunResult dense = sim::Simulator(denseExecution).run(circuit, input);
+    sim::RunResult zfp = sim::Simulator(zfpExecution).run(circuit, input);
+
+    experiment::StateComparison comparison =
+        experiment::compareStates(dense.state, zfp.state);
+
+    (void)comparison.maxAbsAmplitudeError;
+    return 0;
+}
+```
+
+### 4. Backend Selection with `RegisterConfig`
 
 ```cpp
 #include "tmfqsfs.h"
@@ -285,7 +337,7 @@ ctest --preset dev
 
 This runs integration suites:
 
-- `test_algorithms`
+- `test_circuit`
 - `test_register_validation`
 - `test_storage_parity`
 - `test_storage_cache`
@@ -325,7 +377,8 @@ This configures AddressSanitizer and UndefinedBehaviorSanitizer through CMake ta
 - Benchmark sources are in `benchmarks/`, with utilities:
   - `benchmark_backends`
   - `benchmark_regression_check`
-- Existing profiling artifacts are under `profiling/`.
+- Generated profiling and experiment output should stay outside version control. The repository ignores `profiling/` and generated task CSV/log outputs.
+- Set `TMFQS_BACKEND_METRICS=1` or `TMFQS_CODEC_METRICS=1` to print compressed-backend cache and codec counters for Blosc/ZFP experiments.
 
 ## Project Layout
 

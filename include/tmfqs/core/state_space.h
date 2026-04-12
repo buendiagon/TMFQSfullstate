@@ -5,14 +5,21 @@
 #include <limits>
 #include <stdexcept>
 
+#include "tmfqs/core/types.h"
+
 namespace tmfqs {
 
 /**
- * @brief Returns maximum qubit count supported by 32-bit state indexing.
+ * @brief Returns maximum qubit count supported by state indexing.
  * @return Maximum safe number of qubits.
  */
+inline constexpr unsigned int maxSupportedQubitsForStateIndex() {
+	return std::numeric_limits<StateIndex>::digits - 1u;
+}
+
+/** @brief Backward-compatible name for older examples. */
 inline constexpr unsigned int maxSupportedQubitsForU32States() {
-	return std::numeric_limits<unsigned int>::digits - 1u;
+	return maxSupportedQubitsForStateIndex();
 }
 
 /**
@@ -21,11 +28,11 @@ inline constexpr unsigned int maxSupportedQubitsForU32States() {
  * @return Number of basis states.
  * @throws std::invalid_argument If the value exceeds supported index width.
  */
-inline unsigned int checkedStateCount(unsigned int numQubits) {
-	if(numQubits > maxSupportedQubitsForU32States()) {
-		throw std::invalid_argument("Number of qubits exceeds supported range for 32-bit state indexing");
+inline StateIndex checkedStateCount(unsigned int numQubits) {
+	if(numQubits > maxSupportedQubitsForStateIndex()) {
+		throw std::invalid_argument("Number of qubits exceeds supported range for state indexing");
 	}
-	return 1u << numQubits;
+	return StateIndex{1u} << numQubits;
 }
 
 /**

@@ -39,6 +39,13 @@
 /cmake_install.cmake
 /install_manifest.txt
 /compile_commands.json
+/.cache/
+/profiling/
+/tasks/*.csv
+/tasks/*.log
+/tasks/**/*.csv
+/tasks/**/*.log
+/tasks/zfp_error_runs_*/
 
 # Sourcetrial files
 TMFQSfullState.srctrlbm

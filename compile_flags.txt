@@ -1,8 +1,0 @@
--std=c++17
--Iinclude
--Isrc
--xc++
--DHAVE_BLOSC2
--DHAVE_ZFP
--Wall
--Wextra

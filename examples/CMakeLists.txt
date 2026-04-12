@@ -1,12 +1,8 @@
 set(TMFQS_EXAMPLES
-	applyHadamard
-	applyControlledPhaseShift
-	applyControlledNot
-	qft
 	qftG
 	grover
-	zfp_error_analysis
-	getSumOfProbabilities)
+	grover_normal
+	zfp_error_analysis)
 
 foreach(example_name IN LISTS TMFQS_EXAMPLES)
 	add_executable("${example_name}" "${example_name}.cpp")

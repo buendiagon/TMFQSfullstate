@@ -1,1 +1,0 @@
-/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/qftG 22 --input-family pattern --strategy blosc 
