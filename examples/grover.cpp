@@ -5,6 +5,6 @@ int main(int argc, char *argv[]) {
 		argc,
 		argv,
 		"grover",
-		"lazy",
-		false);
+		"normal",
+		true);
 }

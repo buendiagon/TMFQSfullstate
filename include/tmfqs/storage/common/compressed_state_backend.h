@@ -207,14 +207,8 @@ class CompressedStateBackend final : public IStateBackend {
 			if(const std::vector<double> *buffer = cache_.findBuffer(ref.chunkIndex)) {
 				return buffer->data() + ref.elemOffset;
 			}
-			const ChunkStorage &chunk = chunks_[ref.chunkIndex];
-			const auto start = std::chrono::steady_clock::now();
-			codec_.decompress(chunk.compressed, chunk.elemCount, ioScratch_);
-			const_cast<CompressedStateBackend *>(this)->recordDecode(
-				chunk.compressed.size(),
-				chunk.elemCount,
-				elapsedSecondsSince(start));
-			return ioScratch_.data() + ref.elemOffset;
+			auto slot = const_cast<CompressedStateBackend *>(this)->acquireChunk(ref.chunkIndex);
+			return slot.data + ref.elemOffset;
 		}
 
 		Amplitude readAmplitudeMutable(StateIndex state) {
@@ -377,7 +371,7 @@ class CompressedStateBackend final : public IStateBackend {
 
 		void initBasis(unsigned int numQubits, StateIndex initState, Amplitude amp) override {
 			initZero(numQubits);
-			validateBackendStateIndex((std::string(CodecPolicy::backendName()) + "::initBasis").c_str(), initState, numStates_);
+			validateBackendStateIndex("CompressedStateBackend::initBasis", initState, numStates_);
 			writeAmplitudeMutable(initState, amp);
 			flushCacheIfNeeded();
 		}
@@ -387,7 +381,7 @@ class CompressedStateBackend final : public IStateBackend {
 			std::vector<StateIndex> selected;
 			selected.reserve(basisStates.size());
 			for(StateIndex state : basisStates) {
-				validateBackendStateIndex((std::string(CodecPolicy::backendName()) + "::initUniformSuperposition").c_str(), state, numStates_);
+				validateBackendStateIndex("CompressedStateBackend::initUniformSuperposition", state, numStates_);
 				selected.push_back(state);
 			}
 			std::sort(selected.begin(), selected.end());
@@ -481,14 +475,14 @@ class CompressedStateBackend final : public IStateBackend {
 
 		Amplitude amplitude(StateIndex state) const override {
 			ensureInitialized("amplitude query");
-			validateBackendStateIndex((std::string(CodecPolicy::backendName()) + "::amplitude").c_str(), state, numStates_);
+			validateBackendStateIndex("CompressedStateBackend::amplitude", state, numStates_);
 			const double *ampData = findAmplitudeData(state);
 			return {ampData[0], ampData[1]};
 		}
 
 		void setAmplitude(StateIndex state, Amplitude amp) override {
 			mutate("state update", [&]() {
-				validateBackendStateIndex((std::string(CodecPolicy::backendName()) + "::setAmplitude").c_str(), state, numStates_);
+				validateBackendStateIndex("CompressedStateBackend::setAmplitude", state, numStates_);
 				writeAmplitudeMutable(state, amp);
 			});
 		}
@@ -594,7 +588,7 @@ class CompressedStateBackend final : public IStateBackend {
 
 		void phaseFlipBasisState(StateIndex state) override {
 			mutate("basis-state phase flip", [&]() {
-				validateBackendStateIndex((std::string(CodecPolicy::backendName()) + "::phaseFlipBasisState").c_str(), state, numStates_);
+				validateBackendStateIndex("CompressedStateBackend::phaseFlipBasisState", state, numStates_);
 				CacheAmplitudeRef ref = acquireAmplitudeRef(state);
 				ref.amp[0] = -ref.amp[0];
 				ref.amp[1] = -ref.amp[1];
@@ -624,9 +618,24 @@ class CompressedStateBackend final : public IStateBackend {
 			mutate("inversion about mean", [&]() { applyInversionAboutMeanWithMean(mean); });
 		}
 
+		void applyAffineTransform(Amplitude scale, Amplitude bias) override {
+			mutate("affine transform", [&]() {
+				for(size_t chunkIndex = 0; chunkIndex < chunks_.size(); ++chunkIndex) {
+					auto slot = acquireChunk(chunkIndex);
+					for(size_t elem = 0; elem < chunks_[chunkIndex].elemCount; elem += 2u) {
+						const double real = slot.data[elem];
+						const double imag = slot.data[elem + 1u];
+						slot.data[elem] = scale.real * real - scale.imag * imag + bias.real;
+						slot.data[elem + 1u] = scale.real * imag + scale.imag * real + bias.imag;
+					}
+					*slot.dirty = true;
+				}
+			});
+		}
+
 		void applyHadamard(QubitIndex qubit) override {
 			ensureInitialized("Hadamard");
-			validateBackendSingleQubit((std::string(CodecPolicy::backendName()) + "::applyHadamard").c_str(), qubit, numQubits_);
+			validateBackendSingleQubit("CompressedStateBackend::applyHadamard", qubit, numQubits_);
 			const unsigned int targetMask = qubitMaskFromMsbIndex(qubit, numQubits_);
 			const double invSqrt2 = 1.0 / std::sqrt(2.0);
 			mutate("Hadamard", [&]() {
@@ -649,7 +658,7 @@ class CompressedStateBackend final : public IStateBackend {
 
 		void applyPauliX(QubitIndex qubit) override {
 			ensureInitialized("PauliX");
-			validateBackendSingleQubit((std::string(CodecPolicy::backendName()) + "::applyPauliX").c_str(), qubit, numQubits_);
+			validateBackendSingleQubit("CompressedStateBackend::applyPauliX", qubit, numQubits_);
 			const unsigned int targetMask = qubitMaskFromMsbIndex(qubit, numQubits_);
 			mutate("PauliX", [&]() {
 				runPairKernel(targetMask, [&](StateIndex, StateIndex, double *a0, double *a1) {
@@ -665,7 +674,7 @@ class CompressedStateBackend final : public IStateBackend {
 
 		void applyControlledPhaseShift(QubitIndex controlQubit, QubitIndex targetQubit, double theta) override {
 			ensureInitialized("controlled phase shift");
-			validateBackendTwoQubits((std::string(CodecPolicy::backendName()) + "::applyControlledPhaseShift").c_str(), controlQubit, targetQubit, numQubits_);
+			validateBackendTwoQubits("CompressedStateBackend::applyControlledPhaseShift", controlQubit, targetQubit, numQubits_);
 			const unsigned int controlMask = qubitMaskFromMsbIndex(controlQubit, numQubits_);
 			const unsigned int targetMask = qubitMaskFromMsbIndex(targetQubit, numQubits_);
 			const double phaseReal = std::cos(theta);
@@ -685,7 +694,7 @@ class CompressedStateBackend final : public IStateBackend {
 
 		void applyControlledNot(QubitIndex controlQubit, QubitIndex targetQubit) override {
 			ensureInitialized("controlled not");
-			validateBackendTwoQubits((std::string(CodecPolicy::backendName()) + "::applyControlledNot").c_str(), controlQubit, targetQubit, numQubits_);
+			validateBackendTwoQubits("CompressedStateBackend::applyControlledNot", controlQubit, targetQubit, numQubits_);
 			const unsigned int controlMask = qubitMaskFromMsbIndex(controlQubit, numQubits_);
 			const unsigned int targetMask = qubitMaskFromMsbIndex(targetQubit, numQubits_);
 			mutate("controlled not", [&]() {

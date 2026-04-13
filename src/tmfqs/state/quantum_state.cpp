@@ -18,7 +18,8 @@ enum class StateKind {
 	Basis,
 	BasisAmplitude,
 	UniformSubset,
-	Amplitudes
+	Amplitudes,
+	Register
 };
 
 double probabilityMass(const AmplitudesVector &amplitudes) {
@@ -66,6 +67,36 @@ struct QuantumState::Impl {
 	Amplitude basisAmplitude{1.0, 0.0};
 	BasisStateList basisStates;
 	AmplitudesVector amplitudes;
+	std::unique_ptr<QuantumRegister> reg;
+
+	Impl() = default;
+
+	Impl(const Impl &other)
+		: qubits(other.qubits),
+		  kind(other.kind),
+		  basisState(other.basisState),
+		  basisAmplitude(other.basisAmplitude),
+		  basisStates(other.basisStates),
+		  amplitudes(other.amplitudes) {
+		if(other.reg) {
+			reg = std::make_unique<QuantumRegister>(*other.reg);
+		}
+	}
+
+	Impl &operator=(const Impl &other) {
+		if(this == &other) return *this;
+		qubits = other.qubits;
+		kind = other.kind;
+		basisState = other.basisState;
+		basisAmplitude = other.basisAmplitude;
+		basisStates = other.basisStates;
+		amplitudes = other.amplitudes;
+		reg = other.reg ? std::make_unique<QuantumRegister>(*other.reg) : nullptr;
+		return *this;
+	}
+
+	Impl(Impl &&) noexcept = default;
+	Impl &operator=(Impl &&) noexcept = default;
 };
 
 QuantumState::QuantumState() : impl_(std::make_unique<Impl>()) {}
@@ -96,24 +127,72 @@ StateIndex QuantumState::stateCount() const {
 }
 
 Amplitude QuantumState::amplitude(StateIndex state) const {
+	if(state >= stateCount()) {
+		throw std::invalid_argument("Amplitude state index is out of range");
+	}
+	if(impl_->kind == StateKind::Amplitudes) {
+		const size_t elem = static_cast<size_t>(state) * 2u;
+		return {impl_->amplitudes[elem], impl_->amplitudes[elem + 1u]};
+	}
+	if(impl_->kind == StateKind::Basis || impl_->kind == StateKind::BasisAmplitude) {
+		return state == impl_->basisState ? impl_->basisAmplitude : Amplitude{0.0, 0.0};
+	}
+	if(impl_->kind == StateKind::Register) {
+		return impl_->reg->amplitude(state);
+	}
 	RegisterConfig cfg;
 	cfg.strategy = StorageStrategyKind::Dense;
 	return materialize(cfg).amplitude(state);
 }
 
 double QuantumState::totalProbability() const {
+	if(impl_->kind == StateKind::Amplitudes) {
+		return probabilityMass(impl_->amplitudes);
+	}
+	if(impl_->kind == StateKind::Basis || impl_->kind == StateKind::BasisAmplitude) {
+		return impl_->basisAmplitude.real * impl_->basisAmplitude.real +
+		       impl_->basisAmplitude.imag * impl_->basisAmplitude.imag;
+	}
+	if(impl_->kind == StateKind::Register) {
+		return impl_->reg->totalProbability();
+	}
 	RegisterConfig cfg;
 	cfg.strategy = StorageStrategyKind::Dense;
 	return materialize(cfg).totalProbability();
 }
 
 AmplitudesVector QuantumState::amplitudes() const {
+	if(impl_->kind == StateKind::Amplitudes) {
+		return impl_->amplitudes;
+	}
+	if(impl_->kind == StateKind::Register) {
+		return impl_->reg->amplitudes();
+	}
 	RegisterConfig cfg;
 	cfg.strategy = StorageStrategyKind::Dense;
 	return materialize(cfg).amplitudes();
 }
 
 StateIndex QuantumState::measure(IRandomSource &randomSource) const {
+	if(impl_->kind == StateKind::Basis || impl_->kind == StateKind::BasisAmplitude) {
+		return impl_->basisState;
+	}
+	if(impl_->kind == StateKind::Amplitudes) {
+		const double rnd = randomSource.nextUnitDouble();
+		double cumulative = 0.0;
+		for(StateIndex state = 0; state < stateCount(); ++state) {
+			const size_t elem = static_cast<size_t>(state) * 2u;
+			cumulative += impl_->amplitudes[elem] * impl_->amplitudes[elem] +
+			              impl_->amplitudes[elem + 1u] * impl_->amplitudes[elem + 1u];
+			if(rnd <= cumulative) {
+				return state;
+			}
+		}
+		throw std::runtime_error("QuantumState::measure cumulative probability did not reach sample");
+	}
+	if(impl_->kind == StateKind::Register) {
+		return impl_->reg->measure(randomSource);
+	}
 	RegisterConfig cfg;
 	cfg.strategy = StorageStrategyKind::Dense;
 	return materialize(cfg).measure(randomSource);
@@ -221,12 +300,18 @@ QuantumRegister QuantumState::materialize(const RegisterConfig &config) const {
 		}
 		case StateKind::Amplitudes:
 			return QuantumRegister(impl_->qubits, impl_->amplitudes, config);
+		case StateKind::Register:
+			return *impl_->reg;
 	}
 	return QuantumRegister(impl_->qubits, config);
 }
 
-QuantumState QuantumState::fromRegister(const QuantumRegister &reg) {
-	return fromAmplitudes(reg.qubitCount(), reg.amplitudes(), StateValidation{1e-6, NormalizationPolicy::AllowUnnormalized});
+QuantumState QuantumState::fromRegister(QuantumRegister reg) {
+	auto impl = std::make_unique<Impl>();
+	impl->qubits = reg.qubitCount();
+	impl->kind = StateKind::Register;
+	impl->reg = std::make_unique<QuantumRegister>(std::move(reg));
+	return QuantumState(std::move(impl));
 }
 
 } // namespace state

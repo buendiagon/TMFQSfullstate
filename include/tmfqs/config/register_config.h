@@ -40,11 +40,11 @@ enum class ZfpCompressionMode {
 /** @brief Runtime configuration for the Blosc backend. */
 struct BloscConfig {
 	/** @brief Number of basis states grouped into one compressed chunk. */
-	size_t chunkStates = 16384;
+	size_t chunkStates = 32768;
 	/** @brief Compression level in `[0, 9]` (higher is usually smaller but slower). */
 	int clevel = 1;
 	/** @brief Number of threads used by Blosc operations. */
-	int nthreads = 1;
+	int nthreads = 4;
 	/** @brief Blosc compressor id (`BLOSC_*` compcode values). */
 	int compcode = 1;
 	/** @brief Enables byte shuffle pre-filter to improve compression ratio. */
@@ -72,9 +72,9 @@ struct ZfpConfig {
 	/** @brief Target absolute error used in fixed-accuracy mode. */
 	double accuracy = 1e-8;
 	/** @brief Number of basis states grouped into one compressed chunk. */
-	size_t chunkStates = 16384;
+	size_t chunkStates = 32768;
 	/** @brief Number of threads used by ZFP execution. */
-	int nthreads = 1;
+	int nthreads = 4;
 	/** @brief Number of decompressed chunks cached during gate application. */
 	size_t gateCacheSlots = 8;
 };

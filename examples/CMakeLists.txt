@@ -1,7 +1,7 @@
 set(TMFQS_EXAMPLES
 	qftG
 	grover
-	grover_normal
+	groverLazy
 	zfp_error_analysis)
 
 foreach(example_name IN LISTS TMFQS_EXAMPLES)

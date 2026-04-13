@@ -62,7 +62,7 @@ class QuantumState {
 		explicit QuantumState(std::unique_ptr<Impl> impl);
 
 		QuantumRegister materialize(const RegisterConfig &config) const;
-		static QuantumState fromRegister(const QuantumRegister &reg);
+		static QuantumState fromRegister(QuantumRegister reg);
 
 		friend class tmfqs::sim::Simulator;
 };

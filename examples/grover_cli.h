@@ -226,6 +226,9 @@ inline int runGroverCli(int argc, char *argv[], const char *binaryName, const ch
 		circuitOptions.markedStates = BasisStateList(std::move(options.markedStates));
 		circuitOptions.materializedDiffusion = materializedDiffusion;
 		const circuit::Circuit circuit = circuit::makeGrover(options.qubitCount, std::move(circuitOptions));
+		if(options.registerConfig.workloadHint == StorageWorkloadHint::Generic) {
+			options.registerConfig.workloadHint = StorageWorkloadHint::Grover;
+		}
 		sim::ExecutionConfig execution;
 		execution.backend = options.registerConfig;
 		execution.observability.traceOperations = options.verbose;

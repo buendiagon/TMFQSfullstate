@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstring>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
@@ -11,38 +10,36 @@ namespace tmfqs {
 namespace experiment {
 
 StateComparison compareStates(const state::QuantumState &reference, const state::QuantumState &candidate) {
-	const AmplitudesVector ref = reference.amplitudes();
-	const AmplitudesVector got = candidate.amplitudes();
-	if(ref.size() != got.size()) {
-		throw std::invalid_argument("Compared states must have the same amplitude vector size");
-	}
-	if(ref.size() % 2u != 0u) {
-		throw std::invalid_argument("Amplitude vector length must be even");
+	if(reference.stateCount() != candidate.stateCount()) {
+		throw std::invalid_argument("Compared states must have the same state count");
 	}
 
 	StateComparison metrics;
-	metrics.bitwiseEqual = ref.size() == got.size() &&
-		std::memcmp(ref.data(), got.data(), ref.size() * sizeof(double)) == 0;
+	metrics.bitwiseEqual = true;
 
 	double diffNormSq = 0.0;
 	double refNormSq = 0.0;
 	double refTotalProbability = 0.0;
 	double gotTotalProbability = 0.0;
-	const size_t stateCount = ref.size() / 2u;
+	const StateIndex stateCount = reference.stateCount();
 
-	for(size_t state = 0; state < stateCount; ++state) {
-		const size_t elem = state * 2u;
-		const double refReal = ref[elem];
-		const double refImag = ref[elem + 1u];
-		const double gotReal = got[elem];
-		const double gotImag = got[elem + 1u];
+	for(StateIndex state = 0; state < stateCount; ++state) {
+		const Amplitude ref = reference.amplitude(state);
+		const Amplitude got = candidate.amplitude(state);
+		const double refReal = ref.real;
+		const double refImag = ref.imag;
+		const double gotReal = got.real;
+		const double gotImag = got.imag;
+		if(refReal != gotReal || refImag != gotImag) {
+			metrics.bitwiseEqual = false;
+		}
 		const double diffReal = gotReal - refReal;
 		const double diffImag = gotImag - refImag;
 		const double stateDiffSq = diffReal * diffReal + diffImag * diffImag;
 		const double stateAbsError = std::sqrt(stateDiffSq);
 		if(stateAbsError > metrics.maxAbsAmplitudeError) {
 			metrics.maxAbsAmplitudeError = stateAbsError;
-			metrics.worstState = static_cast<StateIndex>(state);
+			metrics.worstState = state;
 		}
 		metrics.maxAbsComponentError = std::max(
 			metrics.maxAbsComponentError,

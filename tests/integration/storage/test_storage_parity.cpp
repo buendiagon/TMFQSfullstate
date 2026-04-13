@@ -275,9 +275,9 @@ void testZfpThreadedRoundTripFallback() {
 	tmfqs_test::assertRegistersClose(denseReg, zfpReg, 5e-4);
 }
 
-void testBackendAutoTuningHeuristics() {
+void testBackendDefaultPreservation() {
 	using namespace tmfqs;
-	std::cout << "=== backend auto tuning ===\n";
+	std::cout << "=== backend default preservation ===\n";
 
 	RegisterConfig zfpCfg;
 	zfpCfg.strategy = StorageStrategyKind::Zfp;
@@ -286,7 +286,9 @@ void testBackendAutoTuningHeuristics() {
 		StorageStrategyRegistry::tuneConfig(20, zfpCfg, StorageStrategyKind::Zfp);
 	TMFQS_TEST_REQUIRE(tunedZfp.zfp.chunkStates == 32768u);
 	TMFQS_TEST_REQUIRE(tunedZfp.zfp.gateCacheSlots == 8u);
-	TMFQS_TEST_REQUIRE(tunedZfp.zfp.nthreads >= 1);
+	TMFQS_TEST_REQUIRE(tunedZfp.zfp.nthreads == 4);
+	TMFQS_TEST_REQUIRE(tunedZfp.zfp.mode == ZfpCompressionMode::FixedPrecision);
+	TMFQS_TEST_REQUIRE(tunedZfp.zfp.precision == 40u);
 
 	RegisterConfig explicitZfpCfg = zfpCfg;
 	explicitZfpCfg.zfp.chunkStates = 16384u;
@@ -308,7 +310,10 @@ void testBackendAutoTuningHeuristics() {
 		StorageStrategyRegistry::tuneConfig(19, bloscCfg, StorageStrategyKind::Blosc);
 	TMFQS_TEST_REQUIRE(tunedBlosc.blosc.chunkStates == 32768u);
 	TMFQS_TEST_REQUIRE(tunedBlosc.blosc.gateCacheSlots == 8u);
-	TMFQS_TEST_REQUIRE(tunedBlosc.blosc.nthreads >= 1);
+	TMFQS_TEST_REQUIRE(tunedBlosc.blosc.clevel == 1);
+	TMFQS_TEST_REQUIRE(tunedBlosc.blosc.nthreads == 4);
+	TMFQS_TEST_REQUIRE(tunedBlosc.blosc.compcode == 1);
+	TMFQS_TEST_REQUIRE(tunedBlosc.blosc.useShuffle);
 
 	RegisterConfig explicitBloscCfg = bloscCfg;
 	explicitBloscCfg.blosc.chunkStates = 4096u;
@@ -367,7 +372,7 @@ int main() {
 	testOverlayMeasurementParity();
 	testZfpRegisterCopySemantics();
 	testZfpThreadedRoundTripFallback();
-	testBackendAutoTuningHeuristics();
+	testBackendDefaultPreservation();
 	std::cout << "Storage parity tests passed.\n";
 	return 0;
 }

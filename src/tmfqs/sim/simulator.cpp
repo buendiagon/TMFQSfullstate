@@ -34,15 +34,7 @@ void executeOperation(QuantumRegister &reg, const circuit::Operation &operation)
 				reg.applyPhaseFlipBasisState(op.state);
 			} else if constexpr(std::is_same<Op, circuit::InversionAboutMean>::value) {
 				if(op.materialized) {
-					Amplitude mean{0.0, 0.0};
-					for(StateIndex state = 0; state < reg.stateCount(); ++state) {
-						const Amplitude amp = reg.amplitude(state);
-						mean.real += amp.real;
-						mean.imag += amp.imag;
-					}
-					mean.real /= static_cast<double>(reg.stateCount());
-					mean.imag /= static_cast<double>(reg.stateCount());
-					reg.applyInversionAboutMeanMaterialized(mean);
+					reg.applyInversionAboutMeanMaterialized();
 				} else {
 					reg.applyInversionAboutMean();
 				}
@@ -100,7 +92,7 @@ RunResult Simulator::run(const circuit::Circuit &circuit, const state::QuantumSt
 	}
 	report.executionSeconds = std::chrono::duration<double>(Clock::now() - runStart).count();
 
-	return {state::QuantumState::fromRegister(reg), std::move(report)};
+	return {state::QuantumState::fromRegister(std::move(reg)), std::move(report)};
 }
 
 } // namespace sim

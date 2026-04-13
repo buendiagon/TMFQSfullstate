@@ -109,18 +109,13 @@ QuantumRegister::QuantumRegister(const QuantumRegister &other) {
 	config_ = other.config_;
 	resolvedStrategy_ = other.resolvedStrategy_;
 	if(other.backend_) {
-		if(!other.affineOverlayActive_) {
-			// Deep-copy backend storage so register copies are independent.
-			backend_ = other.backend_->clone();
-		} else {
-			BackendSelection selection = StateBackendFactory::createSelection(numQubits_, config_);
-			config_ = selection.config;
-			resolvedStrategy_ = selection.strategy;
-			backend_ = std::move(selection.backend);
-			backend_->loadAmplitudes(numQubits_, other.snapshotLogicalAmplitudes());
-		}
+		// Deep-copy backend storage and preserve any lazy affine overlay.
+		backend_ = other.backend_->clone();
 	}
-	resetAffineOverlay();
+	affineScale_ = other.affineScale_;
+	affineBias_ = other.affineBias_;
+	affineOverlayActive_ = other.affineOverlayActive_;
+	cachedLogicalAmplitudeSum_ = other.cachedLogicalAmplitudeSum_;
 }
 
 /** @brief Deep copy assignment using backend clone semantics. */
@@ -135,17 +130,11 @@ QuantumRegister& QuantumRegister::operator=(const QuantumRegister &other) {
 		resetAffineOverlay();
 		return *this;
 	}
-	if(!other.affineOverlayActive_) {
-		backend_ = other.backend_->clone();
-		resetAffineOverlay();
-		return *this;
-	}
-	BackendSelection selection = StateBackendFactory::createSelection(numQubits_, config_);
-	config_ = selection.config;
-	resolvedStrategy_ = selection.strategy;
-	backend_ = std::move(selection.backend);
-	backend_->loadAmplitudes(numQubits_, other.snapshotLogicalAmplitudes());
-	resetAffineOverlay();
+	backend_ = other.backend_->clone();
+	affineScale_ = other.affineScale_;
+	affineBias_ = other.affineBias_;
+	affineOverlayActive_ = other.affineOverlayActive_;
+	cachedLogicalAmplitudeSum_ = other.cachedLogicalAmplitudeSum_;
 	return *this;
 }
 
@@ -164,6 +153,7 @@ void QuantumRegister::resetAffineOverlay() {
 	affineScale_ = {1.0, 0.0};
 	affineBias_ = {0.0, 0.0};
 	affineOverlayActive_ = false;
+	cachedLogicalAmplitudeSum_ = std::nullopt;
 }
 
 /** @brief Applies the lazy affine overlay to a backend amplitude. */
@@ -184,6 +174,9 @@ Amplitude QuantumRegister::removeAffineOverlay(Amplitude logicalAmplitude) const
 
 /** @brief Computes the sum of all logical amplitudes. */
 Amplitude QuantumRegister::logicalAmplitudeSum() const {
+	if(cachedLogicalAmplitudeSum_.has_value()) {
+		return *cachedLogicalAmplitudeSum_;
+	}
 	Amplitude sum{0.0, 0.0};
 	visitLogicalAmplitudeChunks([&](StateIndex, const double *data, size_t elemCount) {
 		for(size_t elem = 0; elem + 1u < elemCount; elem += 2u) {
@@ -191,6 +184,7 @@ Amplitude QuantumRegister::logicalAmplitudeSum() const {
 			sum.imag += data[elem + 1u];
 		}
 	});
+	cachedLogicalAmplitudeSum_ = sum;
 	return sum;
 }
 
@@ -230,8 +224,10 @@ void QuantumRegister::flushAffineOverlay() {
 	if(!affineOverlayActive_) {
 		return;
 	}
-	backend_->loadAmplitudes(numQubits_, snapshotLogicalAmplitudes());
+	std::optional<Amplitude> savedSum = cachedLogicalAmplitudeSum_;
+	backend_->applyAffineTransform(affineScale_, affineBias_);
 	resetAffineOverlay();
+	cachedLogicalAmplitudeSum_ = savedSum;
 }
 
 /** @brief Returns number of qubits in the register. */
@@ -318,6 +314,7 @@ void QuantumRegister::setAmplitude(StateIndex state, Amplitude amp) {
 	requireInitialized("state update");
 	validateStateIndex("QuantumRegister::setAmplitude", state, numStates_);
 	backend_->setAmplitude(state, removeAffineOverlay(amp));
+	cachedLogicalAmplitudeSum_ = std::nullopt;
 }
 
 /** @brief Loads complete amplitude data from an interleaved buffer. */
@@ -401,16 +398,23 @@ void QuantumRegister::applyGate(const QuantumGate &gate, const QubitList &qubits
 		flushAffineOverlay();
 	}
 	backend_->applyGate(gate, qubits);
+	cachedLogicalAmplitudeSum_ = std::nullopt;
 }
 
 /** @brief Applies a phase flip to one basis state. */
 void QuantumRegister::applyPhaseFlipBasisState(StateIndex state) {
 	requireInitialized("basis-state phase flip");
 	validateStateIndex("QuantumRegister::applyPhaseFlipBasisState", state, numStates_);
-	if(affineOverlayActive_) {
+	if(cachedLogicalAmplitudeSum_.has_value() || affineOverlayActive_) {
 		const Amplitude logical = amplitude(state);
-		backend_->setAmplitude(state, removeAffineOverlay(negateAmplitude(logical)));
-		return;
+		if(cachedLogicalAmplitudeSum_.has_value()) {
+			cachedLogicalAmplitudeSum_->real -= 2.0 * logical.real;
+			cachedLogicalAmplitudeSum_->imag -= 2.0 * logical.imag;
+		}
+		if(affineOverlayActive_) {
+			backend_->setAmplitude(state, removeAffineOverlay(negateAmplitude(logical)));
+			return;
+		}
 	}
 	backend_->phaseFlipBasisState(state);
 }
@@ -428,6 +432,10 @@ void QuantumRegister::applyInversionAboutMean() {
 /** @brief Applies inversion-about-mean using a precomputed mean amplitude. */
 void QuantumRegister::applyInversionAboutMean(Amplitude mean) {
 	requireInitialized("inversion about mean");
+	if(cachedLogicalAmplitudeSum_.has_value()) {
+		cachedLogicalAmplitudeSum_->real = 2.0 * mean.real * static_cast<double>(numStates_) - cachedLogicalAmplitudeSum_->real;
+		cachedLogicalAmplitudeSum_->imag = 2.0 * mean.imag * static_cast<double>(numStates_) - cachedLogicalAmplitudeSum_->imag;
+	}
 	const Amplitude scale = affineOverlayActive_ ? affineScale_ : Amplitude{1.0, 0.0};
 	const Amplitude bias = affineOverlayActive_ ? affineBias_ : Amplitude{0.0, 0.0};
 	affineScale_ = negateAmplitude(scale);
@@ -435,9 +443,23 @@ void QuantumRegister::applyInversionAboutMean(Amplitude mean) {
 	affineOverlayActive_ = true;
 }
 
+/** @brief Applies inversion-about-mean through the backend storage path dynamically calculating the mean natively. */
+void QuantumRegister::applyInversionAboutMeanMaterialized() {
+	requireInitialized("inversion about mean");
+	const Amplitude sum = logicalAmplitudeSum();
+	applyInversionAboutMeanMaterialized({
+		sum.real / static_cast<double>(numStates_),
+		sum.imag / static_cast<double>(numStates_)
+	});
+}
+
 /** @brief Applies inversion-about-mean through the backend storage path. */
 void QuantumRegister::applyInversionAboutMeanMaterialized(Amplitude mean) {
 	requireInitialized("inversion about mean");
+	if(cachedLogicalAmplitudeSum_.has_value()) {
+		cachedLogicalAmplitudeSum_->real = 2.0 * mean.real * static_cast<double>(numStates_) - cachedLogicalAmplitudeSum_->real;
+		cachedLogicalAmplitudeSum_->imag = 2.0 * mean.imag * static_cast<double>(numStates_) - cachedLogicalAmplitudeSum_->imag;
+	}
 	if(affineOverlayActive_) {
 		flushAffineOverlay();
 	}
@@ -452,6 +474,7 @@ void QuantumRegister::applyHadamard(QubitIndex qubit) {
 		flushAffineOverlay();
 	}
 	backend_->applyHadamard(qubit);
+	cachedLogicalAmplitudeSum_ = std::nullopt;
 }
 
 /** @brief Applies Pauli-X to one qubit. */
@@ -462,6 +485,7 @@ void QuantumRegister::applyPauliX(QubitIndex qubit) {
 		flushAffineOverlay();
 	}
 	backend_->applyPauliX(qubit);
+	cachedLogicalAmplitudeSum_ = std::nullopt;
 }
 
 /** @brief Applies controlled phase-shift gate. */
@@ -474,6 +498,7 @@ void QuantumRegister::applyControlledPhaseShift(QubitIndex controlQubit, QubitIn
 		flushAffineOverlay();
 	}
 	backend_->applyControlledPhaseShift(controlQubit, targetQubit, theta);
+	cachedLogicalAmplitudeSum_ = std::nullopt;
 }
 
 /** @brief Applies controlled-NOT gate. */
@@ -486,6 +511,7 @@ void QuantumRegister::applyControlledNot(QubitIndex controlQubit, QubitIndex tar
 		flushAffineOverlay();
 	}
 	backend_->applyControlledNot(controlQubit, targetQubit);
+	cachedLogicalAmplitudeSum_ = std::nullopt;
 }
 
 /** @brief Applies SWAP using three controlled-NOT operations. */

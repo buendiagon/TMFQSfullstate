@@ -16,7 +16,7 @@ namespace tmfqs {
 struct BackendSelection {
 	/** @brief Selected strategy kind. */
 	StorageStrategyKind strategy = StorageStrategyKind::Dense;
-	/** @brief Effective backend configuration after auto-tuning. */
+	/** @brief Effective backend configuration after strategy resolution. */
 	RegisterConfig config;
 	/** @brief Backend object implementing the selected strategy. */
 	std::unique_ptr<IStateBackend> backend;
@@ -52,7 +52,7 @@ class StorageStrategyRegistry {
 		 */
 		static std::string toString(StorageStrategyKind kind);
 		/**
-		 * @brief Applies backend-specific auto-tuning while preserving explicit overrides.
+		 * @brief Preserves the supplied backend config after strategy resolution.
 		 * @param numQubits Register size.
 		 * @param cfg User-supplied configuration.
 		 * @param resolvedKind Strategy chosen for the backend.

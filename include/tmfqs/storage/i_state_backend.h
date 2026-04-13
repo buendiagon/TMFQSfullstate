@@ -114,6 +114,12 @@ class IStateBackend {
 		 */
 		virtual void inversionAboutMean(Amplitude mean) = 0;
 		/**
+		 * @brief Applies `amp = scale * amp + bias` to every basis-state amplitude.
+		 * @param scale Complex multiplier.
+		 * @param bias Complex value added after scaling.
+		 */
+		virtual void applyAffineTransform(Amplitude scale, Amplitude bias) = 0;
+		/**
 		 * @brief Applies a single-qubit Hadamard gate.
 		 * @param qubit Target qubit index.
 		 */

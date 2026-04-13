@@ -5,6 +5,7 @@
 #include <functional>
 #include <iosfwd>
 #include <memory>
+#include <optional>
 
 #include "tmfqs/config/register_config.h"
 #include "tmfqs/core/types.h"
@@ -162,6 +163,8 @@ class QuantumRegister {
 		 * @param mean Mean complex amplitude across the full register.
 		 */
 		void applyInversionAboutMean(Amplitude mean);
+		/** @brief Applies inversion about mean by materializing backend storage using derived mean. */
+		void applyInversionAboutMeanMaterialized();
 		/**
 		 * @brief Applies inversion about mean by materializing backend storage.
 		 * @param mean Mean complex amplitude across the full register.
@@ -212,6 +215,7 @@ class QuantumRegister {
 		StorageStrategyKind resolvedStrategy_ = StorageStrategyKind::Dense;
 		/** @brief Active state backend implementation. */
 		std::unique_ptr<IStateBackend> backend_;
+		mutable std::optional<Amplitude> cachedLogicalAmplitudeSum_;
 		/** @brief Global affine scale used to lazily represent full-register transforms. */
 		Amplitude affineScale_{1.0, 0.0};
 		/** @brief Global affine bias used to lazily represent full-register transforms. */

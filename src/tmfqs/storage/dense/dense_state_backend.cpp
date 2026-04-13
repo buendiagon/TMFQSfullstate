@@ -239,6 +239,18 @@ class DenseStateBackend final : public IStateBackend {
 			}
 		}
 
+		void applyAffineTransform(Amplitude scale, Amplitude bias) override {
+			ensureInitialized("affine transform");
+			double *amp = amplitudes_.data();
+			double *end = amp + amplitudes_.size();
+			for(; amp != end; amp += 2) {
+				const double real = amp[0];
+				const double imag = amp[1];
+				amp[0] = scale.real * real - scale.imag * imag + bias.real;
+				amp[1] = scale.real * imag + scale.imag * real + bias.imag;
+			}
+		}
+
 		/** @brief Applies Hadamard transform to one qubit. */
 		void applyHadamard(QubitIndex qubit) override {
 			validateSingleQubitOperation(qubit, "DenseStateBackend::applyHadamard");

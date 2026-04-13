@@ -4,7 +4,7 @@ int main(int argc, char *argv[]) {
 	return tmfqs_examples::runGroverCli(
 		argc,
 		argv,
-		"grover_normal",
-		"normal",
-		true);
+		"groverLazy",
+		"lazy",
+		false);
 }
