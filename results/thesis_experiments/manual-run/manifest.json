@@ -1,0 +1,57 @@
+{
+  "started_at": "2026-04-12T21:49:28",
+  "host": "localhost.localdomain",
+  "repo_root": "/home/buendiagon/buendiagon/Universidad/QSTest",
+  "qubits": [
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28
+  ],
+  "strategies": [
+    "dense",
+    "blosc",
+    "zfp"
+  ],
+  "workloads": [
+    "qft_pattern",
+    "qft_high_entropy",
+    "grover_single_n8",
+    "grover_single_n2",
+    "grover_single_7n8",
+    "grover_multi",
+    "grover_lazy_single_n8",
+    "grover_lazy_single_n2",
+    "grover_lazy_single_7n8",
+    "grover_lazy_multi"
+  ],
+  "profiler": "psrecord",
+  "psrecord_interval": 1.0,
+  "compression_defaults": {
+    "blosc": {
+      "chunkStates": 32768,
+      "gateCacheSlots": 8,
+      "clevel": 1,
+      "nthreads": 4,
+      "compcode": 1,
+      "useShuffle": true
+    },
+    "zfp": {
+      "mode": "FixedPrecision",
+      "precision": 40,
+      "chunkStates": 32768,
+      "gateCacheSlots": 8,
+      "nthreads": 4
+    }
+  },
+  "git": {
+    "commit": "2d05075b36ef4d810863f9216efdcb1b57e8678b",
+    "branch": "main",
+    "status_short": "M README.md\n M examples/CMakeLists.txt\n?? examples/experiment_compare.cpp\n?? scripts/"
+  }
+}

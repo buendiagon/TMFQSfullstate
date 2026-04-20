@@ -1,0 +1,6 @@
+Input family: random-phase
+Random seed: 123456
+Measured state (k): 2273035
+Calculated r (N/k): 3.69049
+Starting up command '/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/qftG 23 --input-family random-phase --strategy blosc --chunk-states 32768 --cache-slots 8 --clevel 1 --nthreads 4' and attaching to process
+Process finished (18.01 seconds)

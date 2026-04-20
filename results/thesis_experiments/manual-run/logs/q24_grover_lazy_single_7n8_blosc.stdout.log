@@ -1,0 +1,5 @@
+Grover mode: lazy
+Resolved strategy: blosc
+Grover search result: 14680064
+Starting up command '/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/groverLazy 24 14680064 --strategy blosc --chunk-states 32768 --cache-slots 8 --clevel 1 --nthreads 4' and attaching to process
+Process finished (2.00 seconds)

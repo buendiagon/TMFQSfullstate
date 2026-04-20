@@ -1,0 +1,5 @@
+Input family: pattern
+Measured state (k): 46137344
+Calculated r (N/k): 1.45455
+Starting up command '/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/qftG 26 --input-family pattern --strategy blosc --chunk-states 32768 --cache-slots 8 --clevel 1 --nthreads 4' and attaching to process
+Process finished (39.01 seconds)

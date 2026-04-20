@@ -2,6 +2,7 @@ set(TMFQS_EXAMPLES
 	qftG
 	grover
 	groverLazy
+	experiment_compare
 	zfp_error_analysis)
 
 foreach(example_name IN LISTS TMFQS_EXAMPLES)

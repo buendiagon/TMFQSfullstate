@@ -276,6 +276,14 @@ Comparison reads states through their normal amplitude access path instead of al
 
 `examples/zfp_error_analysis.cpp` shows a complete workflow for comparing dense and ZFP runs across Grover and QFT scenarios and optionally writing CSV output.
 
+For the full thesis campaign, use the resumable runner:
+
+```bash
+./scripts/run_thesis_experiments.py
+```
+
+By default it builds `build/release`, runs q20 through q28 in serial order, measures standalone process time and peak memory with `psrecord`, and writes timestamped CSV outputs under `results/thesis_experiments/`. The campaign uses the fixed thesis backend settings, including ZFP `FixedPrecision` with `precision = 40`. Use `--profiler time` to collect `/usr/bin/time` metrics instead of `psrecord`, or `--qubits 20,21` / `--qubits 20-24` to run a smaller range.
+
 ## Benchmarks
 
 Build benchmarks with a preset that enables them:

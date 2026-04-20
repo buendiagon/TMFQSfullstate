@@ -1,0 +1,5 @@
+Grover mode: normal
+Resolved strategy: dense
+Grover search result: 2097152
+Starting up command '/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/grover 24 2097152,8388608,14680064 --strategy dense' and attaching to process
+Process finished (37.02 seconds)

@@ -1,0 +1,2 @@
+qubits,workload,strategy,accuracy_kind,bitwise_equal,max_abs_amplitude_error,max_abs_component_error,rel_l2,rmse_amplitude,max_abs_probability_error,total_probability_diff,worst_state
+26,qft_pattern,zfp,lossy,false,3.7857887661870836e-11,3.4901859180536121e-11,1.333941505476352e-10,1.6283465643021838e-14,1.9151583097176683e-11,4.8517967421446428e-11,29622272

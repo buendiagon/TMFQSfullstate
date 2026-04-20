@@ -1,0 +1,5 @@
+Grover mode: lazy
+Resolved strategy: dense
+Grover search result: 8388608
+Starting up command '/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/groverLazy 24 8388608 --strategy dense' and attaching to process
+Process finished (1.00 seconds)

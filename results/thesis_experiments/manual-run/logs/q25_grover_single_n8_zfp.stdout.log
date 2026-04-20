@@ -1,0 +1,5 @@
+Grover mode: normal
+Resolved strategy: zfp
+Grover search result: 4194304
+Starting up command '/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/grover 25 4194304 --strategy zfp --zfp-mode precision --zfp-precision 40 --zfp-chunk-states 32768 --zfp-cache-slots 8 --nthreads 4' and attaching to process
+Process finished (5794.88 seconds)

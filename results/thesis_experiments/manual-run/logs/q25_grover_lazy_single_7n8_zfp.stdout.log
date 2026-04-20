@@ -1,0 +1,5 @@
+Grover mode: lazy
+Resolved strategy: zfp
+Grover search result: 29360128
+Starting up command '/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/groverLazy 25 29360128 --strategy zfp --zfp-mode precision --zfp-precision 40 --zfp-chunk-states 32768 --zfp-cache-slots 8 --nthreads 4' and attaching to process
+Process finished (7.00 seconds)

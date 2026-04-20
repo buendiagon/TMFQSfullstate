@@ -1,0 +1,6 @@
+Input family: random-phase
+Random seed: 123456
+Measured state (k): 19004122
+Calculated r (N/k): 3.53128
+Starting up command '/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/qftG 26 --input-family random-phase --strategy zfp --zfp-mode precision --zfp-precision 40 --zfp-chunk-states 32768 --zfp-cache-slots 8 --nthreads 4' and attaching to process
+Process finished (1716.53 seconds)

@@ -1,0 +1,5 @@
+Input family: pattern
+Measured state (k): 50331648
+Calculated r (N/k): 1.33333
+Starting up command '/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/qftG 26 --input-family pattern --strategy dense' and attaching to process
+Process finished (15.01 seconds)

@@ -1,0 +1,6 @@
+Input family: random-phase
+Random seed: 123456
+Measured state (k): 10040164
+Calculated r (N/k): 6.68404
+Starting up command '/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/qftG 26 --input-family random-phase --strategy dense' and attaching to process
+Process finished (24.01 seconds)

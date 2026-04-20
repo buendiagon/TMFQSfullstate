@@ -1,0 +1,5 @@
+Grover mode: normal
+Resolved strategy: blosc
+Grover search result: 262144
+Starting up command '/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/grover 21 262144,1048576,1835008 --strategy blosc --chunk-states 32768 --cache-slots 8 --clevel 1 --nthreads 4' and attaching to process
+Process finished (7.00 seconds)

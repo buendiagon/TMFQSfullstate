@@ -1,0 +1,5 @@
+Input family: pattern
+Measured state (k): 262144
+Calculated r (N/k): 4
+Starting up command '/home/buendiagon/buendiagon/Universidad/QSTest/build/release/bin/qftG 20 --input-family pattern --strategy zfp --zfp-mode precision --zfp-precision 40 --zfp-chunk-states 32768 --zfp-cache-slots 8 --nthreads 4' and attaching to process
+Process finished (1.00 seconds)
